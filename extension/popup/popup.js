@@ -3,6 +3,7 @@
   'use strict';
 
   const Util = window.FFUtil;
+  const Config = window.FFConfig;
   const CIRC = 219.9;
 
   const $ = (id) => document.getElementById(id);
@@ -376,8 +377,26 @@
   /* misc controls                                                      */
   /* ------------------------------------------------------------------ */
 
-  /** The worker's snapshot has everything needed to rebuild a settings object. */
+  /**
+   * The settings to save when a control here changes.
+   *
+   * This used to rebuild the object from the worker's snapshot, which only
+   * carries the handful of fields the popup itself renders. Everything else —
+   * the schedule, the friction screen, its alternative text, the breath window
+   * — went missing, and since the worker takes a save as the whole truth it
+   * wrote those defaults back. Flipping one switch in the popup quietly wiped
+   * settings you had made on the settings page.
+   *
+   * The snapshot now carries the full settings object (`status.settings`), so
+   * that is the base, and only the field this page actually owns is overridden.
+   */
   function settingsFromStatus() {
+    if (status.settings && typeof status.settings === 'object') {
+      // Only the master switch is edited here; everything else is carried over
+      // untouched by Config.mergeEdits().
+      return Config.mergeEdits(status.settings, { enabled: el.master.checked });
+    }
+    // Older worker: rebuild what we can, so the switch still works.
     return {
       enabled: el.master.checked,
       sites: status.sites.map((s) => ({

@@ -79,6 +79,9 @@
       blocked: 0,
       lastVisitAt: 0,
       day: Util.dayKey(now),
+      // de-dupe bookkeeping for countBlock(); not shown anywhere
+      lastBlockAt: 0,
+      lastBlockReason: null,
     };
   }
 
@@ -122,6 +125,12 @@
       log: [],
     };
     const nonNeg = (v, fb) => Math.max(0, Number(v) || fb || 0);
+    // The day keys are strings ("2026-11-06"), and rolling them through the
+    // numeric coercion turned them into 0. rollDay() then saw "different day"
+    // on every single load and wiped the counters every time the worker
+    // restarted — losing today's pauses, blocks and intentions.
+    state.pause.day = typeof state.pause.day === 'string' && state.pause.day ? state.pause.day : fresh.pause.day;
+    state.stats.day = typeof state.stats.day === 'string' && state.stats.day ? state.stats.day : fresh.stats.day;
     state.pause.until = nonNeg(state.pause.until);
     state.pause.startedAt = nonNeg(state.pause.startedAt);
     state.pause.minutes = nonNeg(state.pause.minutes);
@@ -129,6 +138,7 @@
     state.pause.lastPauseAt = nonNeg(state.pause.lastPauseAt);
     state.pause.total = nonNeg(state.pause.total);
     for (const key of Object.keys(fresh.stats)) {
+      if (key === 'day') continue; // a date string, handled above
       state.stats[key] = nonNeg(state.stats[key]);
     }
 
@@ -160,6 +170,8 @@
       site.blocked = nonNeg(src.blocked);
       site.lastVisitAt = nonNeg(src.lastVisitAt);
       site.day = src.day || Util.dayKey(now);
+      site.lastBlockAt = nonNeg(src.lastBlockAt);
+      site.lastBlockReason = src.lastBlockReason || null;
       if (src.session && typeof src.session === 'object') {
         site.session = {
           tabId: Number(src.session.tabId) || -1,
@@ -201,6 +213,30 @@
       }
     }
     return state;
+  }
+
+  /** How long one blocked page is treated as "the same block" for counting. */
+  const BLOCK_COUNT_WINDOW = 60 * 1000;
+
+  /**
+   * Count a blocked navigation, once.
+   *
+   * A single locked navigation reaches the engine several times: Chrome fires
+   * webNavigation.onBeforeNavigate and tabs.onUpdated for it, and re-evaluates
+   * again when the tab lands on our own blocked page's URL. All of those are the
+   * same block, so the counter only moves when the last count is older than
+   * BLOCK_COUNT_WINDOW (or the reason changed — schedule, cooldown and
+   * second-tab are genuinely different things).
+   */
+  function countBlock(st, state, pattern, reason, now) {
+    const sameBlock = st.lastBlockAt && now - st.lastBlockAt < BLOCK_COUNT_WINDOW && st.lastBlockReason === reason;
+    st.lastBlockAt = now;
+    st.lastBlockReason = reason;
+    if (sameBlock) return false;
+    st.blocked += 1;
+    state.stats.blocked += 1;
+    logEvent(state, { at: now, kind: 'blocked', site: pattern || '', text: reason });
+    return true;
   }
 
   function getSiteState(state, pattern, now) {
@@ -473,16 +509,21 @@
 
     const site = findSite(cfg, pattern);
     if (!site) return { action: 'allow', reason: REASONS.UNTRACKED };
-    if (!site.enabled) return { action: 'allow', reason: REASONS.DISABLED };
+    // A site you switched off is tracked, just not enforced. Saying "untracked"
+    // sent the content script down a branch that never told the chip anything,
+    // so a site you had switched off showed no chip at all on the page.
+    if (!site.enabled) return { action: 'allow', reason: REASONS.DISABLED, site: site.pattern, label: site.label };
 
     const st = getSiteState(state, site.pattern, now);
 
     /* 1. scheduled focus hours win over everything but a pause */
     if (scheduleBlocksAccess(state, cfg, now)) {
       const status = scheduleStatus(cfg, now);
-      st.blocked += 1;
-      state.stats.blocked += 1;
-      logEvent(state, { at: now, kind: 'blocked', site: site.pattern, text: 'schedule' });
+      // Chrome fires several listeners for one navigation (onBeforeNavigate,
+      // tabs.onUpdated, sometimes onHistoryStateUpdated). Counting every
+      // evaluation made "distractions blocked today" climb two or three times
+      // per blocked page, so a block is only counted once per tab per minute.
+      countBlock(st, state, site.pattern, 'schedule', now);
       return {
         action: 'block',
         reason: REASONS.SCHEDULE,
@@ -504,9 +545,7 @@
 
     /* 2. the cooldown wall */
     if (st.cooldownUntil > now) {
-      st.blocked += 1;
-      state.stats.blocked += 1;
-      logEvent(state, { at: now, kind: 'blocked', site: site.pattern, text: 'cooldown' });
+      countBlock(st, state, site.pattern, 'cooldown', now);
       return {
         action: 'block',
         reason: REASONS.COOLDOWN,
@@ -535,8 +574,7 @@
 
     // Another tab already has the site open: one visit, one tab.
     if (st.session && st.session.tabId !== tabId && cfg.behavior.blockNewTabs) {
-      st.blocked += 1;
-      state.stats.blocked += 1;
+      countBlock(st, state, site.pattern, 'second-tab', now);
       return {
         action: 'block',
         reason: REASONS.SECOND_TAB,

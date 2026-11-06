@@ -485,7 +485,15 @@ chrome.runtime.onConnect.addListener((port) => {
           const now = Date.now();
           const site = Engine.findSite(cfg, msg.host || '');
           if (!site || !site.enabled || !cfg.enabled) {
-            port.postMessage({ type: 'verdict', action: 'allow', reason: 'untracked' });
+            // Still name the site when we know it, so the page can show a chip
+            // that says "switched off" instead of nothing at all.
+            port.postMessage({
+              type: 'verdict',
+              action: 'allow',
+              reason: !site ? 'untracked' : 'disabled',
+              siteCfg: site || null,
+              enabled: !!cfg.enabled,
+            });
             return;
           }
           pattern = site.pattern;

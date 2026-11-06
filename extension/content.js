@@ -26,6 +26,9 @@
   let paused = false;
   let lastPayload = null;
   let chip = null;
+  // A site you have switched off is still tracked; the chip says so instead of
+  // implying FocusFrost is watching a site it will never enforce on.
+  let standDown = false;
   // Collapsing the chip is the user's decision, so it has to outlive the next
   // tick — and a service-worker restart, which tears this script down and runs
   // it again. Kept per site, so YouTube and Reddit remember separately.
@@ -115,6 +118,7 @@
       }
       siteCfg = msg.siteCfg || siteCfg;
       behavior = Object.assign({ showChip: true }, msg.behavior || behavior);
+      standDown = msg.reason === 'disabled';
       session = msg.session || null;
       pause = msg.pause || pause;
       // Only an explicit "switched off" hides the chip. An untracked verdict
@@ -388,6 +392,18 @@
         clock: clock(left / 1000),
         color: '#7fd3ff',
         offset: CIRC * (1 - left / total),
+        urgent: false,
+        showEnd: false,
+      };
+    }
+
+    if (standDown) {
+      return {
+        title: (siteCfg && (siteCfg.label || siteCfg.pattern)) || 'FocusFrost',
+        sub: 'Switched off for this site — nothing will be closed.',
+        clock: '–',
+        color: '#93a3c4',
+        offset: CIRC,
         urgent: false,
         showEnd: false,
       };

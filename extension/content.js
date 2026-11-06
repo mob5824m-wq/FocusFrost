@@ -26,6 +26,59 @@
   let paused = false;
   let lastPayload = null;
   let chip = null;
+  // Collapsing the chip is the user's decision, so it has to outlive the next
+  // tick — and a service-worker restart, which tears this script down and runs
+  // it again. Kept per site, so YouTube and Reddit remember separately.
+  const COLLAPSE_KEY = 'ff_chip_collapsed';
+  let collapsed = false;
+  let collapseKnown = false;
+
+  /**
+   * Read the remembered collapsed state once. Storage is async, so anything
+   * rendered before it lands has to be corrected afterwards.
+   */
+  function loadCollapsed() {
+    if (collapseKnown) return Promise.resolve();
+    collapseKnown = true;
+    try {
+      const res = chrome.storage.local.get(COLLAPSE_KEY);
+      if (!res || typeof res.then !== 'function') return Promise.resolve();
+      return res
+        .then((all) => {
+          const map = (all && all[COLLAPSE_KEY]) || {};
+          collapsed = map[host] === true;
+          applyCollapsed();
+        })
+        .catch(() => {});
+    } catch (_) {
+      return Promise.resolve();
+    }
+  }
+
+  function rememberCollapsed(value) {
+    try {
+      const res = chrome.storage.local.get(COLLAPSE_KEY);
+      if (!res || typeof res.then !== 'function') return;
+      res
+        .then((all) => {
+          const map = Object.assign({}, (all && all[COLLAPSE_KEY]) || {});
+          if (value) map[host] = true;
+          else delete map[host];
+          return chrome.storage.local.set({ [COLLAPSE_KEY]: map });
+        })
+        .catch(() => {});
+    } catch (_) {
+      /* storage is a nicety here; the chip still works this session */
+    }
+  }
+
+  function applyCollapsed() {
+    if (!chip || !chip.node) return;
+    chip.collapsed = collapsed;
+    chip.node.classList.toggle('min', collapsed);
+    // A collapsed chip is a dot: say what it is when you hover it.
+    chip.node.title = collapsed ? 'FocusFrost — click to expand' : '';
+  }
 
   function connect() {
     if (dead) return;
@@ -64,7 +117,14 @@
       behavior = Object.assign({ showChip: true }, msg.behavior || behavior);
       session = msg.session || null;
       pause = msg.pause || pause;
-      if (!msg.enabled) teardown();
+      // Only an explicit "switched off" hides the chip. An untracked verdict
+      // carries no `enabled` field at all and must keep drawing it: that is
+      // how you can tell FocusFrost is running on a site it does not police.
+      // Reading the missing field as "off" made the chip vanish on those pages.
+      if (msg.enabled === false) {
+        teardown();
+        return;
+      }
       render();
       return;
     }
@@ -198,7 +258,17 @@
   `;
 
   function buildChip() {
-    if (chip || document.getElementById('ff-shadow-host')) return;
+    // Our own host node can be blown away by the page (some sites empty
+    // documentElement on client-side navigations). If the chip object still
+    // points at a detached node, rebuild rather than quietly doing nothing.
+    if (chip && chip.host && chip.host.isConnected === false) {
+      chip = null;
+      if (chipTicker) clearInterval(chipTicker);
+      chipTicker = null;
+    }
+    if (chip) return;
+    const existing = document.getElementById('ff-shadow-host');
+    if (existing) existing.remove();
     const hostEl = document.createElement('div');
     hostEl.id = 'ff-shadow-host';
     hostEl.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; right: 0; bottom: 0; width: 0; height: 0;';
@@ -237,19 +307,23 @@
       text: node.querySelector('text'),
       title: node.querySelector('.title'),
       sub: node.querySelector('.sub'),
-      collapsed: false,
+      collapsed: collapsed,
     };
 
     node.querySelector('.minbtn').addEventListener('click', (e) => {
       e.stopPropagation();
-      chip.collapsed = true;
-      node.classList.add('min');
+      e.preventDefault();
+      collapsed = true;
+      collapseKnown = true;
+      applyCollapsed();
+      rememberCollapsed(true);
     });
     node.addEventListener('click', () => {
-      if (chip.collapsed) {
-        chip.collapsed = false;
-        node.classList.remove('min');
-      }
+      if (!collapsed) return;
+      collapsed = false;
+      collapseKnown = true;
+      applyCollapsed();
+      rememberCollapsed(false);
     });
     node.querySelector('.act.end').addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -290,6 +364,7 @@
     chip.ring.style.strokeDashoffset = String(view.offset);
     node.classList.toggle('urgent', view.urgent);
     node.style.color = view.color;
+    applyCollapsed();
     const endBtn = node.querySelector('.act.end');
     if (endBtn) endBtn.style.display = view.showEnd ? '' : 'none';
 
@@ -366,6 +441,7 @@
 
   /* ---------------- go ---------------- */
 
+  loadCollapsed();
   connect();
   beat(true);
 

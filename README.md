@@ -125,7 +125,7 @@ Inside the sandbox you get a fake browser with tabs you can open, leave, return 
 | Surface | What it does |
 | --- | --- |
 | **Popup** (toolbar) | Live state — grace, focus countdown, cooldown, pause — plus the hold-to-pause button and per-site status. |
-| **On-page chip** | A small frosty pill bottom-right with the current clock. Click to collapse it to a dot. |
+| **On-page chip** | A small frosty pill bottom-right with the current clock. Click – to collapse it to a dot; it stays collapsed (remembered per site, across reloads) until you click it. |
 | **Blocked page** | The cooling-down wall: live countdown, the breathing exercise, and the hold-to-pause panel. |
 | **Settings (full page)** | The dedicated settings web app — see below. |
 | **Dashboard** | Today's metrics, per-site focus time, live engine state, and a rules sandbox. |

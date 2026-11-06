@@ -721,7 +721,7 @@
         }),
         App.switchRow({
           title: 'Show the on-page timer',
-          hint: 'A small frosty chip with your grace and focus countdown. Click it to collapse.',
+          hint: 'A small frosty chip with your grace and focus countdown. Click – to collapse it to a dot; it stays collapsed until you click it again.',
           value: s.behavior.showChip,
           onChange: (v) => {
             s.behavior.showChip = v;

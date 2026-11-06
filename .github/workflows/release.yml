@@ -68,6 +68,10 @@ jobs:
 
           previous="$(git tag --list 'v*' --sort=-v:refname | grep -vx "$tag" | head -n1 || true)"
 
+          # Keep the notes readable: no Merge pull request, no history before the
+          # previous release, no release-commit noise.
+          ignore='^(v[0-9]|Merge (pull request|branch)|Initial commit|Prepare )'
+
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
             if [ "$FORCE" != "true" ]; then
               echo "::notice::$tag already exists — nothing to release. Dispatch this workflow with 'force' to re-publish."
@@ -85,9 +89,10 @@ jobs:
             range="HEAD"
           fi
 
-          # Release notes: the commit subjects, minus the noise of version bumps.
-          notes="$(git log "$range" --no-merges --pretty=format:'- %s' \
-            | grep -v '^- v[0-9]' || true)"
+          # Release notes: the commit subjects that a person actually wants to read.
+          notes="$(git log "$range" --no-merges --pretty=format:'%s' \
+            | grep -Ev "$ignore" \
+            | sed 's/^/- /' || true)"
 
           if [ -z "$notes" ]; then
             notes="- Initial release."

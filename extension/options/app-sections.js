@@ -59,9 +59,15 @@
     return (App.status && App.status.sites.find((s) => s.pattern === pattern)) || null;
   }
 
+  /**
+   * The site icon, with its initial as a permanent fallback underneath.
+   * No inline `onerror`: extension pages run under `script-src 'self'`, which
+   * blocks inline event handlers. Util.favicon wires the error listener.
+   */
   function faviconCell(site) {
-    const initial = (site.label || site.pattern).slice(0, 1).toUpperCase();
-    return el('div', { class: 'favicon', html: `<img src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(site.pattern)}.ico" alt="" loading="lazy" onerror="this.remove()" />` + (initial ? `<span>${H(initial)}</span>` : '') });
+    const node = el('div', { class: 'favicon' });
+    Util.favicon(node, site.pattern, site.label);
+    return node;
   }
 
   function downloadBlob(name, text, type) {

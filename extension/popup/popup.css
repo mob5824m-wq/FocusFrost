@@ -164,6 +164,10 @@ body.popup {
   overflow: hidden;
 }
 .favicon img { width: 16px; height: 16px; }
+/* The initial shows until the real icon loads; then it steps aside. */
+.favicon .favicon-img { display: none; }
+.favicon.has-icon .favicon-img { display: block; }
+.favicon.has-icon .favicon-letter { display: none; }
 .site-label { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .site-sub { font-size: 10.5px; color: var(--dim); font-weight: 500; }
 .site-right { display: flex; align-items: center; gap: 6px; }

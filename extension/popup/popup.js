@@ -258,12 +258,9 @@
         clockClass = 'cool';
       }
 
-      const initial = (site.label || site.pattern).slice(0, 1).toUpperCase();
       li.innerHTML = `
         <div class="site-name">
-          <div class="favicon"><img src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(
-            site.pattern
-          )}.ico" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.textContent='${initial}'" /></div>
+          <div class="favicon"></div>
           <div>
             <div class="site-label">${escapeHtml(site.label)}</div>
             <div class="site-sub">${escapeHtml(site.pattern)} · ${Util.humanDuration(
@@ -278,6 +275,8 @@
       }</span>
         </div>
       `;
+      // Icon + initial fallback, wired without inline handlers (CSP: script-src 'self').
+      Util.favicon(li.querySelector('.favicon'), site.pattern, site.label);
       el.siteList.appendChild(li);
     }
   }

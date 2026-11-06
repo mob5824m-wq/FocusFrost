@@ -76,6 +76,36 @@
     return `${prefix || 'id'}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
   }
 
+  /**
+   * Fill a `.favicon` element with a site's icon, falling back to its initial.
+   *
+   * The error is handled with `addEventListener`, never an inline `onerror`:
+   * extension pages run under `script-src 'self'`, which blocks inline event
+   * handlers outright (and hashes cannot whitelist them — that would need
+   * 'unsafe-hashes'). The fallback letter is always rendered underneath, so a
+   * missing icon degrades quietly instead of logging a CSP violation.
+   */
+  function favicon(parent, pattern, label) {
+    if (!parent) return null;
+    const initial = String(label || pattern || '?').trim().slice(0, 1).toUpperCase() || '?';
+    parent.textContent = '';
+    const letter = parent.ownerDocument.createElement('span');
+    letter.className = 'favicon-letter';
+    letter.textContent = initial;
+    parent.appendChild(letter);
+
+    const img = parent.ownerDocument.createElement('img');
+    img.className = 'favicon-img';
+    img.alt = '';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => img.remove());
+    img.addEventListener('load', () => parent.classList.add('has-icon'));
+    img.src = `https://icons.duckduckgo.com/ip3/${encodeURIComponent(pattern)}.ico`;
+    parent.appendChild(img);
+    return img;
+  }
+
   function plural(n, word, suffix) {
     return `${n} ${word}${n === 1 ? '' : suffix || 's'}`;
   }
@@ -89,5 +119,6 @@
     siteLabel,
     uid,
     plural,
+    favicon,
   };
 });

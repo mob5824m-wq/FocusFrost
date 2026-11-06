@@ -182,12 +182,13 @@ State lives in `chrome.storage.local`; settings are mirrored to `chrome.storage.
 ### Tests
 
 ```bash
-node --test tests/*.test.js      # 54 tests, no dependencies
+node --test tests/*.test.js      # 66 tests, no dependencies
 ```
 
 - `tests/engine.test.js` — the policy in isolation: grace edge cases, cap enforcement, cooldown arithmetic, pause rationing, clamping, corrupt-state repair.
 - `tests/intervention.test.js` — the gate: intervention vs. cooldown precedence, intentions and walk-aways, the log cap, the doomscroll brake, focus hours (including overnight windows, day lists and pauses), config clamping.
 - `tests/worker.test.js` — the **real** `background.js` booted in a VM against a fake `chrome` API: navigations, second tabs, tab closes, window focus loss, content-script ports, settings round-trips, and the gate end to end (one pass per tab, no redirect loop, walk-aways, focus hours).
+- `tests/release.test.js` — the version staying in sync across files, Chrome-rejected version formats, and the packaged zip (valid archive, manifest at the root, reproducible bytes, refuses to build a broken tree).
 
 ### Permissions, and why
 
@@ -210,6 +211,23 @@ FocusFrost does not read page content. The content script reports one thing per 
 - A tracked site opened in a Private window in a different profile is out of scope.
 - Tracked sites are matched by domain (subdomains included). Path-level rules are not supported.
 - Only the top-level frame is tracked.
+
+## Releases
+
+Versions are tagged `vMAJOR.MINOR.PATCH` and published as a built zip on the
+[releases page](https://github.com/mob5824m-wq/FocusFrost/releases). Merging a
+version-bump pull request *is* the release: the workflow tags the merge commit,
+rebuilds the extension from a clean checkout, verifies the manifest inside the
+archive, and attaches `focusfrost-<version>.zip` with a SHA-256 checksum.
+
+```bash
+npm run zip              # build dist/focusfrost-<version>.zip yourself
+npm run version:check    # assert package.json and manifest.json agree
+npm test                 # includes tests for the release tooling
+```
+
+See [RELEASING.md](RELEASING.md) for the full process, including why the archive
+is reproducible.
 
 ## License
 

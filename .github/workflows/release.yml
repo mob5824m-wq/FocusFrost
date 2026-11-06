@@ -1,0 +1,270 @@
+name: Release
+
+# Publishing is a consequence of merging, not a separate button.
+#
+# When a version-bump pull request merges into main, the version in the manifest
+# changes — and that is the trigger. We do not trust "this was a release PR";
+# we compare the version on the merge commit against the last tag. If it moved
+# forward, that commit is a release. Anything else is ordinary CI.
+#
+# Also runs on a manual dispatch with an explicit version, for re-publishing or
+# backfilling a release without touching the branch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension/manifest.json'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Re-publish even if the tag already exists (overwrites the release assets)'
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Decide whether this is a release
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+      previous: ${{ steps.decide.outputs.previous }}
+      notes: ${{ steps.decide.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and full history, needed for the notes range
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Compare manifest version against the last tag
+        id: decide
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          node tools/version.js --check
+          version="$(node tools/version.js)"
+          tag="v${version}"
+          echo "manifest version: ${version}"
+
+          previous="$(git tag --list 'v*' --sort=-v:refname | grep -vx "$tag" | head -n1 || true)"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            if [ "$FORCE" != "true" ]; then
+              echo "::notice::$tag already exists — nothing to release. Dispatch this workflow with 'force' to re-publish."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::warning::Re-publishing $tag because force was set."
+          fi
+
+          if [ -n "$previous" ]; then
+            echo "previous release: $previous"
+            range="${previous}..HEAD"
+          else
+            echo "no previous release tag; using full history"
+            range="HEAD"
+          fi
+
+          # Release notes: the commit subjects, minus the noise of version bumps.
+          notes="$(git log "$range" --no-merges --pretty=format:'- %s' \
+            | grep -v '^- v[0-9]' || true)"
+
+          if [ -z "$notes" ]; then
+            notes="- Initial release."
+          fi
+
+          {
+            echo "release=true"
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "previous=${previous}"
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "${notes}"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Test and build
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Never ship something that has not just passed its own tests.
+      - name: Tests
+        run: npm test
+
+      - name: Version is consistent
+        run: node tools/version.js --check
+
+      - name: Build the extension
+        id: package
+        run: |
+          # Deterministic archive: same commit, same bytes.
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
+          node tools/package.js
+
+      - name: Verify the archive
+        run: |
+          set -euo pipefail
+          zip="dist/focusfrost-${{ needs.prepare.outputs.version }}.zip"
+          unzip -t "$zip" > /dev/null
+          # The version inside the archive must be the version we are tagging.
+          unzip -p "$zip" manifest.json | node -e "
+            let raw = '';
+            process.stdin.on('data', (d) => (raw += d));
+            process.stdin.on('end', () => {
+              const v = JSON.parse(raw).version;
+              const want = process.argv[1];
+              if (v !== want) {
+                console.error('manifest inside the zip says ' + v + ', expected ' + want);
+                process.exit(1);
+              }
+              console.log('zip manifest version: ' + v);
+            });
+          " '${{ needs.prepare.outputs.version }}'
+          sha256sum "$zip" | tee "$zip.sha256"
+
+      - name: Upload to the workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: focusfrost-${{ needs.prepare.outputs.version }}
+          path: |
+            dist/focusfrost-${{ needs.prepare.outputs.version }}.zip
+            dist/focusfrost-${{ needs.prepare.outputs.version }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Tag and publish
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download the built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: focusfrost-${{ needs.prepare.outputs.version }}
+          path: dist
+
+      - name: Tag the commit
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::notice::$TAG already exists (re-publishing). Moving it to the current commit."
+            git tag -f "$TAG" -m "FocusFrost $VERSION"
+            git push origin "refs/tags/$TAG" --force
+          else
+            git tag -a "$TAG" -m "FocusFrost $VERSION"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - name: Write the release body
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS: ${{ needs.prepare.outputs.previous }}
+          NOTES: ${{ needs.prepare.outputs.notes }}
+        run: |
+          set -euo pipefail
+          zip="focusfrost-${VERSION}.zip"
+          sha="$(sha256sum "dist/${zip}" | cut -d' ' -f1)"
+          if [ -n "$PREVIOUS" ]; then
+            compare="**Full changelog:** https://github.com/${{ github.repository }}/compare/${PREVIOUS}...v${VERSION}"
+          else
+            compare=""
+          fi
+
+          {
+            echo "${NOTES}"
+            echo
+            echo '---'
+            echo
+            echo '## Install'
+            echo
+            echo '1. Download `'"${zip}"'` below.'
+            echo '2. Open `chrome://extensions` and turn on **Developer mode**.'
+            echo '3. Click **Load unpacked** and pick the unzipped folder (or drag the zip onto the page).'
+            echo
+            echo 'Settings live in their own page: the toolbar popup has a link, or open the extension options.'
+            echo
+            echo '## Checksum'
+            echo
+            echo '```'
+            echo "${sha}  ${zip}"
+            echo '```'
+            if [ -n "$compare" ]; then
+              echo
+              echo "$compare"
+            fi
+          } > release-body.md
+
+          echo "--- body ---"
+          cat release-body.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          zip="focusfrost-${VERSION}.zip"
+          args=("$TAG" "dist/${zip}" "dist/${zip}.sha256" --title "FocusFrost ${VERSION}" --notes-file release-body.md)
+
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "updating the existing release"
+            gh release upload "$TAG" "dist/${zip}" "dist/${zip}.sha256" --clobber
+            gh release edit "$TAG" --notes-file release-body.md $([ "$PRERELEASE" = "true" ] && echo --prerelease)
+          else
+            gh release create "${args[@]}"
+          fi
+
+          echo "### Released $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

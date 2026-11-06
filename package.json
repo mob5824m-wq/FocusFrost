@@ -8,7 +8,12 @@
     "test": "node --test tests/*.test.js",
     "sandbox": "node demo/server.js",
     "icons": "python3 tools/make-icons.py",
-    "zip": "cd extension && zip -qr ../focusfrost-1.0.0.zip . -x '.*'"
+    "zip": "node tools/package.js",
+    "version": "node tools/version.js",
+    "version:check": "node tools/version.js --check",
+    "version:patch": "node tools/version.js patch",
+    "version:minor": "node tools/version.js minor",
+    "version:major": "node tools/version.js major"
   },
   "engines": {
     "node": ">=18"

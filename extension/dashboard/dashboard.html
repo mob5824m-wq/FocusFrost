@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FocusFrost — Dashboard</title>
+  <link rel="stylesheet" href="../assets/ui.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="dhead">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="dg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a9e6ff" />
+              <stop offset="1" stop-color="#4a9df5" />
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#dg1)" opacity="0.22" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#dg1)" stroke-width="1.6" />
+          <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <div>
+          <h1>Dashboard</h1>
+          <span class="tiny dim" id="todayLabel"></span>
+        </div>
+      </div>
+      <div class="row">
+        <span id="modeBadge" class="badge off">Idle</span>
+        <button id="settingsBtn" class="btn btn-sm btn-ghost">Settings</button>
+      </div>
+    </header>
+
+    <section class="metrics">
+      <div class="metric card">
+        <span class="metric-label">Focused today</span>
+        <b id="mFocus">0m</b>
+        <span class="metric-sub" id="mFocusSub">across all tracked sites</span>
+      </div>
+      <div class="metric card">
+        <span class="metric-label">Distractions blocked</span>
+        <b id="mBlocked">0</b>
+        <span class="metric-sub">visits you did not make</span>
+      </div>
+      <div class="metric card">
+        <span class="metric-label">Visits started</span>
+        <b id="mSessions">0</b>
+        <span class="metric-sub">grace windows opened</span>
+      </div>
+      <div class="metric card">
+        <span class="metric-label">Pauses used</span>
+        <b id="mPauses">0/0</b>
+        <span class="metric-sub" id="mPausesSub">escape hatch</span>
+      </div>
+      <div class="metric card">
+        <span class="metric-label">Friction shown</span>
+        <b id="mInterventions">0</b>
+        <span class="metric-sub" id="mInterventionsSub">0 walked away</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="spread">
+        <div>
+          <h2 class="h2">Where your focus went</h2>
+          <p class="small muted">Focused time per site today.</p>
+        </div>
+      </div>
+      <div id="bars" class="bars"></div>
+    </section>
+
+    <section class="card">
+      <div class="spread">
+        <div>
+          <h2 class="h2">Live site state</h2>
+          <p class="small muted">What the engine thinks about every tracked domain right now.</p>
+        </div>
+        <button id="clearAll" class="btn btn-sm btn-ghost">Clear all locks</button>
+      </div>
+      <div class="table" id="table"></div>
+    </section>
+
+    <section class="card sim">
+      <div class="spread">
+        <div>
+          <h2 class="h2">Rules sandbox</h2>
+          <p class="small muted">
+            Preview the ruleset with a fake clock. Nothing here touches your real timers, storage or tabs.
+          </p>
+        </div>
+        <span class="badge off">simulation</span>
+      </div>
+
+      <div class="sim-grid">
+        <div class="sim-controls">
+          <div class="field">
+            <label for="simSite">Tracked site</label>
+            <select id="simSite"></select>
+          </div>
+          <div class="sim-row">
+            <button class="btn btn-sm" data-sim="open">Open site</button>
+            <button class="btn btn-sm" data-sim="blur">Switch away</button>
+            <button class="btn btn-sm" data-sim="return">Come back</button>
+            <button class="btn btn-sm" data-sim="close">Close tab</button>
+          </div>
+          <div class="sim-row">
+            <button class="btn btn-sm" data-sim="+10">+10s</button>
+            <button class="btn btn-sm" data-sim="+60">+1m</button>
+            <button class="btn btn-sm" data-sim="+300">+5m</button>
+            <button class="btn btn-sm btn-ghost" data-sim="reset">Reset</button>
+          </div>
+          <p class="small muted">
+            With interventions on, "Open site" stops at the friction gate below —
+            the same decision the service worker makes before any tab loads.
+          </p>
+          <div class="field">
+            <label for="simMinutes">Pause length</label>
+            <select id="simMinutes"></select>
+            <button class="btn btn-sm btn-primary" data-sim="pause">Start pause</button>
+          </div>
+        </div>
+
+        <div class="sim-screen">
+          <div class="sim-clock mono" id="simClock">0:00</div>
+          <div class="sim-status" id="simStatus">Idle</div>
+          <pre class="sim-log mono" id="simLog"></pre>
+
+          <div class="sim-gate hidden" id="simGate">
+            <div class="sim-gate-head">
+              <span class="badge paused" id="simGateBadge">intervention</span>
+              <b id="simGateTitle">YouTube</b>
+            </div>
+            <p class="small muted" id="simGateBody">
+              In the real extension this would be the full-screen friction page.
+            </p>
+            <input id="simIntention" class="sim-intention" type="text" maxlength="90"
+                   placeholder="One line: why do you want this?" />
+            <div class="sim-gate-actions">
+              <button class="btn btn-sm" data-gate="continue">Continue with intention</button>
+              <button class="btn btn-sm btn-primary" data-gate="close">Close the tab</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="dfoot tiny dim">
+      FocusFrost v1.1 — local-only. No accounts, no telemetry, no network requests except site favicons.
+    </footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../shared/util.js"></script>
+  <script src="../shared/config.js"></script>
+  <script src="../shared/engine.js"></script>
+  <script src="simulator.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

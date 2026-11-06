@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Cooling down — FocusFrost</title>
+  <link rel="stylesheet" href="../assets/ui.css" />
+  <link rel="stylesheet" href="blocked.css" />
+</head>
+<body class="blocked-body">
+  <div class="aurora" aria-hidden="true"></div>
+
+  <main class="wrap-max frost-in">
+    <header class="bhead">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a9e6ff" />
+              <stop offset="1" stop-color="#4a9df5" />
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#bg1)" opacity="0.22" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#bg1)" stroke-width="1.6" />
+          <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <span>FocusFrost</span>
+      </div>
+      <span id="reasonBadge" class="badge cooling">Cooling down</span>
+    </header>
+
+    <section class="hero">
+      <div class="lockwrap">
+        <svg class="bigring" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="track" cx="110" cy="110" r="96" stroke-width="8" />
+          <circle id="ring" class="meter" cx="110" cy="110" r="96" stroke-width="8" />
+        </svg>
+        <div class="ring-center">
+          <div id="clock" class="clock mono">0:00</div>
+          <div class="clock-label" id="clockLabel">until you can go back</div>
+        </div>
+      </div>
+
+      <h1 id="title">Not right now.</h1>
+      <p id="subtitle" class="muted">This site is cooling down.</p>
+      <p id="detail" class="detail"></p>
+
+      <div class="actions">
+        <button id="backBtn" class="btn btn-primary">Back to what matters</button>
+        <button id="pauseBtn" class="btn">Need it for real?</button>
+        <button id="settingsBtn" class="btn btn-ghost">Settings</button>
+      </div>
+    </section>
+
+    <!-- pause drawer -->
+    <section id="pausePanel" class="card panel hidden">
+      <div class="spread">
+        <div>
+          <h2 class="h2">Pause productivity shield</h2>
+          <p class="small muted">Pick a window, then hold the button. The pause is time-boxed and rate limited.</p>
+        </div>
+        <button id="closePanel" class="icon-btn btn-ghost" title="Close">✕</button>
+      </div>
+
+      <div id="presets" class="presets"></div>
+
+      <button id="holdBtn" class="hold" type="button">
+        <span class="hold-fill" id="holdFill"></span>
+        <span class="hold-label" id="holdLabel">Hold 6s to unlock</span>
+      </button>
+      <p id="pauseMsg" class="small dim"></p>
+    </section>
+
+    <footer class="bfoot">
+      <p class="small muted" id="statsLine"></p>
+      <p class="tiny dim">FocusFrost never sends your browsing data anywhere. Everything stays in this browser.</p>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../shared/util.js"></script>
+  <script src="blocked.js"></script>
+</body>
+</html>

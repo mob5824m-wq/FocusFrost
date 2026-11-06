@@ -1,0 +1,101 @@
+name: Version bump
+
+# Manual, deliberate. Run this from the Actions tab to prepare a release:
+# it bumps the version in package.json + extension/manifest.json, commits it,
+# tags nothing yet, and opens a pull request. Merging that PR is the release.
+#
+# Doing it this way means the version in `main` always matches what shipped,
+# and a tag can never point at a commit whose manifest disagrees.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part to bump'
+        type: choice
+        required: true
+        default: minor
+        options: [patch, minor, major]
+      prerelease:
+        description: 'Publish as a GitHub pre-release (does not change the version format — Chrome rejects semver suffixes)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Prepare ${{ inputs.bump }} release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Configure git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Current version
+        id: before
+        run: echo "version=$(node tools/version.js)" >> "$GITHUB_OUTPUT"
+
+      - name: Bump
+        id: after
+        run: |
+          node tools/version.js ${{ inputs.bump }}
+          echo "version=$(node tools/version.js)" >> "$GITHUB_OUTPUT"
+
+      - name: Sanity check before proposing it
+        run: |
+          node tools/version.js --check
+          npm test
+          node tools/package.js
+
+      - name: Commit and open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ steps.before.outputs.version }}
+          AFTER: ${{ steps.after.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          branch="release/v${AFTER}"
+
+          # If a previous attempt left the branch behind, start clean.
+          git push origin --delete "$branch" 2>/dev/null || true
+
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "v${AFTER}" -m "Bump ${BEFORE} → ${AFTER}. Merging this releases it: the publish workflow tags the merge commit and attaches the built extension."
+          git push -u origin "$branch"
+
+          note=""
+          if [ "$PRERELEASE" = "true" ]; then
+            note=$'\n\nThis one will be published as a **pre-release**.'$'\n'
+          fi
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "v${AFTER}" \
+            --body "Bumps \`package.json\` and \`extension/manifest.json\` from **${BEFORE}** to **${AFTER}**.${note}
+
+          **Merging this pull request publishes the release.** The \`Release\` workflow then:
+
+          1. tags the merge commit \`v${AFTER}\`,
+          2. builds \`focusfrost-${AFTER}.zip\` from a clean checkout,
+          3. attaches it to the GitHub release with a SHA-256 checksum,
+          4. writes the release notes from the commits since \`v${BEFORE}\`."
+
+      - name: Reminder
+        run: |
+          echo "### Opened release/v${{ steps.after.outputs.version }} : v${{ steps.before.outputs.version }} → v${{ steps.after.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Merge that pull request to publish." >> "$GITHUB_STEP_SUMMARY"

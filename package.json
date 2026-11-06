@@ -1,0 +1,21 @@
+{
+  "name": "focusfrost",
+  "version": "1.1.0",
+  "private": true,
+  "description": "A cooldown for distracting sites, plus a one-breath pause on the way in.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "sandbox": "node demo/server.js",
+    "icons": "python3 tools/make-icons.py",
+    "zip": "node tools/package.js",
+    "version": "node tools/version.js",
+    "version:check": "node tools/version.js --check",
+    "version:patch": "node tools/version.js patch",
+    "version:minor": "node tools/version.js minor",
+    "version:major": "node tools/version.js major"
+  },
+  "engines": {
+    "node": ">=20.4"
+  }
+}

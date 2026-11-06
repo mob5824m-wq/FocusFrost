@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FocusFrost — Settings</title>
+  <link rel="icon" href="../icons/icon48.png" />
+  <link rel="stylesheet" href="../assets/ui.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body class="app">
+  <div class="shell">
+    <!-- ================= sidebar ================= -->
+    <aside class="sidebar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="ag1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a9e6ff" />
+              <stop offset="1" stop-color="#4a9df5" />
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#ag1)" opacity="0.22" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#ag1)" stroke-width="1.6" />
+          <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <div>
+          <h1>FocusFrost</h1>
+          <span class="tiny dim">settings</span>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav" aria-label="Settings sections"></nav>
+
+      <div class="side-foot">
+        <label class="row small master">
+          <span class="switch">
+            <input type="checkbox" id="master" />
+            <span></span>
+          </span>
+          <span id="masterLabel">Shield is on</span>
+        </label>
+        <div class="row small side-stats">
+          <span id="sideStatus" class="badge off">idle</span>
+          <span class="dim tiny" id="sideBlocked">0 blocked today</span>
+        </div>
+        <p class="tiny dim">v1.1 · local only</p>
+      </div>
+    </aside>
+
+    <!-- ================= content ================= -->
+    <main class="content">
+      <header class="topbar">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="row">
+          <button id="dashBtn" class="btn btn-sm btn-ghost">Dashboard</button>
+          <button id="saveBtn" class="btn btn-sm btn-primary" disabled>Saved</button>
+        </div>
+      </header>
+
+      <div class="panes" id="panes"></div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../shared/util.js"></script>
+  <script src="../shared/config.js"></script>
+  <script src="app-core.js"></script>
+  <script src="app-sections.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

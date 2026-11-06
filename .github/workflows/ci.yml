@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # These tests drive the clock with node:test's mock timers, which landed
+        # in Node 20.4. Node 18 would fail on the runner rather than on the code.
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Unit and worker tests
+        run: npm test
+
+      - name: Version is consistent
+        run: node tools/version.js --check
+
+      - name: Every JS file parses
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r file; do
+            node --check "$file" || { echo "::error file=$file::does not parse"; fail=1; }
+          done < <(find extension demo tests tools -name '*.js' -not -path '*/node_modules/*')
+          exit $fail
+
+      - name: Extension packages cleanly
+        run: node tools/package.js

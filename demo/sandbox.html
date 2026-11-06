@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FocusFrost — live sandbox</title>
+  <link rel="stylesheet" href="/extension/assets/ui.css" />
+  <link rel="stylesheet" href="/demo/sandbox.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="tb-left">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#a9e6ff" />
+            <stop offset="1" stop-color="#4a9df5" />
+          </linearGradient>
+        </defs>
+        <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#sbg)" opacity="0.22" />
+        <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#sbg)" stroke-width="1.6" />
+        <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
+      </svg>
+      <div>
+        <b>FocusFrost sandbox</b>
+        <span class="tiny dim">the real extension code, running in a fake browser</span>
+      </div>
+    </div>
+    <div class="tb-right">
+      <span id="statusPill" class="badge off">booting…</span>
+      <button id="helpBtn" class="btn btn-sm btn-ghost">How to try it</button>
+      <a class="btn btn-sm" href="/extension/options/options.html" target="_blank" rel="noopener">Settings page →</a>
+    </div>
+  </div>
+
+  <div id="helpPanel" class="helppanel hidden">
+    <div class="spread">
+      <h3>A 60-second tour</h3>
+      <button id="closeHelp" class="btn btn-sm btn-ghost">Got it</button>
+    </div>
+    <ol>
+      <li><b>Open a tracked site.</b> Pick <code>youtube.com</code> and hit <b>Open tab</b>. You land on the <b>intervention screen</b>, not the site — that is the one-sec half of the design.</li>
+      <li><b>Get through the gate.</b> Sit out the breath (4 seconds here), read the "do this instead" line, then either <b>close the tab</b> or continue with an intention. Only then does the frosty chip appear with the grace countdown.</li>
+      <li><b>Try the grace window.</b> Hit <b>Leave tab</b> then <b>Return</b> quickly — you come back for free, same visit. Wait past it and leave, and the tab closes and the site starts cooling down.</li>
+      <li><b>Hit the wall.</b> Try to open it again: you land on the cooling-down page with the real countdown. The gate does not rescue you from a cooldown.</li>
+      <li><b>Need it for real?</b> On the cooling-down page, pick a length and hold the pause button for six seconds. Two per day, 30 minutes apart.</li>
+      <li><b>Change anything.</b> <b>Settings page →</b> opens the real full-page settings app: interventions, focus hours, pause rationing, intentions.</li>
+    </ol>
+    <p class="tiny dim">The sandbox drives time with buttons instead of waiting, but every decision comes from the same <code>engine.js</code> the installed extension runs.</p>
+  </div>
+
+  <div id="bootError" class="boot-error hidden"></div>
+
+  <main class="layout">
+    <!-- =============== left: the fake browser =============== -->
+    <section class="browser card">
+      <div class="browser-bar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="tabs" id="tabstrip"></div>
+        <button id="newTab" class="icon-btn" title="Open a new tab">+</button>
+      </div>
+
+      <div class="browser-content">
+        <div id="view" class="view">
+          <div class="empty-view">
+            <div class="empty-orb"></div>
+            <h2>Your fake browser</h2>
+            <p class="muted small">Open a tracked site below. If FocusFrost decides you cannot go there, the tab gets redirected to its own cooling-down page — exactly like the real thing.</p>
+          </div>
+        </div>
+        <div id="blockedNote" class="blocked-note hidden"></div>
+      </div>
+
+      <div class="browser-foot">
+        <div class="row wrap">
+          <button class="btn btn-sm" id="openTracked">Open <b id="trackedName">youtube.com</b></button>
+          <button class="btn btn-sm" id="openOther">Open a normal site</button>
+          <button class="btn btn-sm btn-ghost" id="leaveBtn">Leave tab</button>
+          <button class="btn btn-sm btn-ghost" id="returnBtn">Return</button>
+          <button class="btn btn-sm btn-ghost" id="closeBtn">Close tab</button>
+        </div>
+        <div class="row wrap foot-row">
+          <span class="tiny dim">time travel</span>
+          <button class="btn btn-sm btn-ghost" data-age="10">+10s</button>
+          <button class="btn btn-sm btn-ghost" data-age="60">+1m</button>
+          <button class="btn btn-sm btn-ghost" data-age="300">+5m</button>
+          <button class="btn btn-sm btn-ghost" data-age="1800">+30m</button>
+          <button class="btn btn-sm btn-ghost" data-age="7200">+2h</button>
+          <span class="turbo">
+            <label class="switch"><input type="checkbox" id="turbo" /><span></span></label>
+            <span class="tiny">live clock (1 real second = 1 site second)</span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== right: worker, popup, log =============== -->
+    <aside class="rail">
+      <div class="card worker">
+        <div class="spread">
+          <h3>Service worker</h3>
+          <span id="workerState" class="badge off">starting</span>
+        </div>
+        <p class="tiny dim">State lives here. Every page below talks to it.</p>
+        <div id="siteState" class="site-state"></div>
+      </div>
+
+      <div class="card popup-card">
+        <div class="spread">
+          <h3>The toolbar popup</h3>
+          <a id="popupNew" class="tiny" target="_blank">open as tab ↗</a>
+        </div>
+        <div class="popup-frame-wrap">
+          <iframe id="popupFrame" src="/extension/popup/popup.html" title="FocusFrost popup"></iframe>
+        </div>
+      </div>
+
+      <div class="card log-card">
+        <div class="spread">
+          <h3>Event log</h3>
+          <button id="clearLog" class="btn btn-sm btn-ghost">clear</button>
+        </div>
+        <div id="log" class="log mono"></div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/demo/preview.js"></script>
+  <script src="/demo/sandbox.js"></script>
+</body>
+</html>

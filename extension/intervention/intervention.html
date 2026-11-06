@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>One breath — FocusFrost</title>
+  <link rel="stylesheet" href="../assets/ui.css" />
+  <link rel="stylesheet" href="intervention.css" />
+</head>
+<body class="gate">
+  <div class="aurora" aria-hidden="true"></div>
+
+  <main class="frame" id="frame">
+    <header class="ghead">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="ig1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a9e6ff" />
+              <stop offset="1" stop-color="#4a9df5" />
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#ig1)" opacity="0.22" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#ig1)" stroke-width="1.6" />
+          <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <span>FocusFrost</span>
+      </div>
+      <span id="sitePill" class="badge off">—</span>
+    </header>
+
+    <!-- ============ BREATH / 4-7-8 ============ -->
+    <section class="stage" id="stage-breath">
+      <div class="breath-wrap">
+        <div class="orbit" id="orbit">
+          <div class="orb" id="orb">
+            <div class="orb-core"></div>
+          </div>
+        </div>
+        <div class="breath-readout">
+          <div class="phase" id="phaseLabel">Get ready</div>
+          <div class="counter mono" id="phaseCount">—</div>
+        </div>
+      </div>
+      <h1 id="breathTitle">Take one breath.</h1>
+      <p class="lede" id="breathLede">Before you open this, breathe with me. That is all.</p>
+    </section>
+
+    <!-- ============ REFLECT / INTENTION ============ -->
+    <section class="stage hidden" id="stage-reflect">
+      <h1 id="reflectTitle">What are you here for?</h1>
+      <p class="lede" id="reflectLede">Answer honestly. Nobody is reading this but you.</p>
+
+      <div class="questions" id="questions"></div>
+
+      <label class="intent-field" id="intentWrap">
+        <span>Your intention, in one line</span>
+        <input type="text" id="intention" maxlength="160" autocomplete="off" spellcheck="false"
+          placeholder="e.g. find the tutorial on CSS grid, then leave" />
+        <span class="hint" id="intentHint">Saved to today's log so you can check yourself later.</span>
+      </label>
+
+      <button id="reflectDone" class="btn btn-primary wide" disabled>Close the tab instead</button>
+      <p class="tiny dim center" id="reflectNote"></p>
+    </section>
+
+    <!-- ============ TYPE A PHRASE ============ -->
+    <section class="stage hidden" id="stage-type">
+      <h1>Type this exactly.</h1>
+      <p class="lede">No shortcuts. Copy it character for character.</p>
+      <div class="phrase" id="phrase" aria-live="polite"></div>
+      <input type="text" id="typed" class="typed mono" autocomplete="off" spellcheck="false" autocapitalize="off" />
+      <p class="tiny dim" id="typeStatus">—</p>
+    </section>
+
+    <!-- ============ outcome ============ -->
+    <section class="stage hidden" id="stage-done">
+      <div class="done-orb"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg></div>
+      <h1 id="doneTitle">Good.</h1>
+      <p class="lede" id="doneLede">Opening it now.</p>
+    </section>
+
+    <!-- ============ footer / escape hatches ============ -->
+    <footer class="gfoot">
+      <div class="alt" id="alternative">
+        <div class="alt-icon">↺</div>
+        <div>
+          <b>Or do this instead</b>
+          <p id="altText"></p>
+        </div>
+      </div>
+
+      <div class="choices" id="choices">
+        <button id="closeBtn" class="btn btn-primary wide">
+          <span class="choice-main">Not now — close this tab</span>
+          <span class="choice-sub">The healthiest button on this screen</span>
+        </button>
+        <button id="continueBtn" class="btn wide quiet" disabled>
+          <span class="choice-main">Continue anyway</span>
+          <span class="choice-sub" id="continueSub">available in a moment</span>
+        </button>
+      </div>
+
+      <div class="timebox" id="timebox">
+        <span class="tiny dim">needs it for real?</span>
+        <button id="pauseBtn" class="btn btn-sm btn-ghost" disabled>Pause productivity shield</button>
+        <span class="tiny dim" id="pauseNote"></span>
+      </div>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../shared/util.js"></script>
+  <script src="intervention.js"></script>
+</body>
+</html>

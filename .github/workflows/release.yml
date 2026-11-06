@@ -45,12 +45,12 @@ jobs:
       previous: ${{ steps.decide.outputs.previous }}
       notes: ${{ steps.decide.outputs.notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # tags and full history, needed for the notes range
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -109,11 +109,11 @@ jobs:
     if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -154,7 +154,7 @@ jobs:
           sha256sum "$zip" | tee "$zip.sha256"
 
       - name: Upload to the workflow run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: focusfrost-${{ needs.prepare.outputs.version }}
           path: |
@@ -169,17 +169,17 @@ jobs:
     if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
       - name: Download the built artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: focusfrost-${{ needs.prepare.outputs.version }}
           path: dist

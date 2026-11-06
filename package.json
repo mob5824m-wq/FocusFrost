@@ -16,6 +16,6 @@
     "version:major": "node tools/version.js major"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.4"
   }
 }

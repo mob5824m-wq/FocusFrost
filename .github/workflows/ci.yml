@@ -18,11 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20', '22']
+        # These tests drive the clock with node:test's mock timers, which landed
+        # in Node 20.4. Node 18 would fail on the runner rather than on the code.
+        node: ['20', '22', '24']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
 

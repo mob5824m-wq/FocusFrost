@@ -79,7 +79,10 @@ const server = http.createServer((req, res) => {
 
     if (isExtensionPage) {
       const html = fs.readFileSync(file, 'utf8');
-      const tag = '<script>window.__FF_DEMO = true;</script><script src="/demo/preview.js"></script>';
+      // A single external script: extension pages declare `script-src 'self'`,
+      // so an inline <script> stub here would be refused by the page's own CSP.
+      // preview.js sets window.__FF_DEMO itself.
+      const tag = '<script src="/demo/preview.js"></script>';
       // It must run *before* the page's own scripts, which expect chrome.* to
       // already exist. Dropping it at the top of <head> guarantees that.
       const injected = /<head[^>]*>/i.test(html)

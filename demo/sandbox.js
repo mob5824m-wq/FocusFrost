@@ -185,7 +185,7 @@
       view.appendChild(frame);
       noteEl.textContent = isGate
         ? 'The real intervention screen. Breathe, reflect or type your way through — then decide.'
-        : 'The real blocked page. Try the hold-to-pause button, or wait out the clock.';
+        : 'The real blocked page. Breathe your way back in (costs a pause), hold to pause, or wait out the clock.';
       noteEl.classList.remove('hidden');
       return;
     }
@@ -457,6 +457,8 @@
           alternative: 'Put the kettle on and come back in ten minutes. If you still want it then, it will still be here.',
           allowSkip: false,
           reinterveneSeconds: 0,
+          breatheToPass: true,
+          breatheMinutes: 2,
         },
         pause: { holdMs: 3000, presets: [5, 15, 30], maxPerDay: 2, minGapMinutes: 30, strict: true },
         schedule: { enabled: false, pausable: false, blocks: [] },

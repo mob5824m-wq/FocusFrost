@@ -45,10 +45,35 @@
       <p id="detail" class="detail"></p>
 
       <div class="actions">
-        <button id="backBtn" class="btn btn-primary">Back to what matters</button>
-        <button id="pauseBtn" class="btn">Need it for real?</button>
+        <button id="breatheBtn" class="btn btn-primary hidden">Breathe your way back in</button>
+        <button id="backBtn" class="btn">Back to what matters</button>
+        <button id="pauseBtn" class="btn btn-ghost">Hold to pause instead</button>
         <button id="settingsBtn" class="btn btn-ghost">Settings</button>
       </div>
+
+      <p id="breatheNote" class="tiny dim hidden"></p>
+    </section>
+
+    <!-- breathing exercise: the way back in, at the price of a pause -->
+    <section id="breathePanel" class="card panel breathe hidden">
+      <div class="spread">
+        <div>
+          <h2 class="h2" id="breatheTitle">Breathe with the ring</h2>
+          <p class="small muted" id="breatheLede">Finish the cycle and the shield opens for a short window.</p>
+        </div>
+        <button id="closeBreathe" class="icon-btn btn-ghost" title="Not now">✕</button>
+      </div>
+
+      <div class="breath-stage">
+        <div class="breath-orb" id="orb"><div class="breath-core"></div></div>
+        <div class="breath-read">
+          <b id="phaseLabel">Ready</b>
+          <span id="phaseCount" class="mono">—</span>
+        </div>
+      </div>
+
+      <div class="breath-progress"><div id="breathBar"></div></div>
+      <p class="small dim" id="breatheMsg"></p>
     </section>
 
     <!-- pause drawer -->

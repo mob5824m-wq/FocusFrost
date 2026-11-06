@@ -30,6 +30,9 @@
   let holdStart = 0;
   let raf = null;
   let toastTimer = null;
+  let breatheConfig = null; // { enabled, minutes, durationSeconds }
+  let breathing = false;
+  let breathTimers = [];
 
   const el = {
     clock: $('clock'),
@@ -42,6 +45,17 @@
     back: $('backBtn'),
     pause: $('pauseBtn'),
     settings: $('settingsBtn'),
+    breatheBtn: $('breatheBtn'),
+    breatheNote: $('breatheNote'),
+    breathePanel: $('breathePanel'),
+    breatheTitle: $('breatheTitle'),
+    breatheLede: $('breatheLede'),
+    breatheMsg: $('breatheMsg'),
+    closeBreathe: $('closeBreathe'),
+    orb: $('orb'),
+    phaseLabel: $('phaseLabel'),
+    phaseCount: $('phaseCount'),
+    breathBar: $('breathBar'),
     panel: $('pausePanel'),
     closePanel: $('closePanel'),
     presets: $('presets'),
@@ -107,6 +121,58 @@
 
   /* ---------------- status + cooldown clock ---------------- */
 
+  /**
+   * Whether the breathing route should be on this page at all.
+   * It is offered only when it can actually succeed: interventions on, the
+   * feature enabled, and a pause still available today.
+   */
+  async function loadBreatheOffer(res) {
+    if (reason === 'second-tab' || reason === 'schedule') {
+      // Focus hours are not for sale; a second tab is a different problem.
+      el.breatheBtn.classList.add('hidden');
+      el.breatheNote.classList.add('hidden');
+      return;
+    }
+    const cfgRes = await send({ type: 'blockedConfig', site });
+    if (!cfgRes || !cfgRes.ok) return;
+    const iv = cfgRes.intervention || {};
+    const pause = cfgRes.pause || {};
+    const offer = cfgRes.breathe || {};
+    breatheConfig = {
+      enabled: iv.enabled !== false && iv.breatheToPass !== false,
+      // The worker decides the window (strict mode rounds it to a preset).
+      minutes: offer.minutes || iv.breatheMinutes || 2,
+      durationSeconds: Math.max(4, Math.min(60, Number(iv.durationSeconds) || 10)),
+      reason: offer.blockedReason || null,
+    };
+    const available = breatheConfig.enabled && pause.canStart;
+    el.breatheBtn.classList.toggle('hidden', !available);
+    el.breatheNote.classList.toggle('hidden', !available);
+    if (available) {
+      el.breatheBtn.textContent = `Breathe your way in — ${breatheConfig.minutes} min`;
+      el.breatheNote.textContent = `Costs one of today's pauses. ${pause.remainingToday} left, ${pause.minGapMinutes} min apart.`;
+      // The breath becomes the primary action; the hold is the fallback.
+      el.pause.classList.remove('btn-primary');
+      el.pause.classList.add('btn-ghost');
+    } else if (breatheConfig.enabled && (breatheConfig.reason || pause.blockedReason)) {
+      // Never show a ritual that cannot actually open the door.
+      const why = breatheConfig.reason || pause.blockedReason;
+      el.breatheBtn.classList.add('hidden');
+      el.breatheNote.classList.remove('hidden');
+      el.breatheNote.textContent =
+        why === 'daily-limit'
+          ? "Out of pauses today, so the breath would not open anything. That is the deal."
+          : why === 'disabled'
+          ? 'Pauses are switched off in settings, so breathing will not open this either.'
+          : why === 'too-soon'
+          ? 'Too soon after your last pause. The gap is part of the design.'
+          : 'The shield cannot be paused right now.';
+    } else {
+      el.breatheBtn.classList.add('hidden');
+      el.breatheNote.classList.add('hidden');
+    }
+  }
+
   async function refresh() {
     const res = await send({ type: 'status' });
     if (!res || !res.ok) {
@@ -148,6 +214,10 @@
 
     renderPauseUi();
     tick();
+    // Re-ask every time: a pause taken in another tab, or the daily limit being
+    // hit elsewhere, has to be reflected here. Asking once cached "you have
+    // pauses left" onto a page that was opened minutes ago.
+    await loadBreatheOffer(res);
   }
 
   function unlocked(match) {
@@ -161,9 +231,142 @@
     el.ring.style.stroke = 'var(--mint)';
     el.back.classList.add('hidden');
     el.pause.classList.add('hidden');
+    // The page is opening the site; a stale breath offer would just be noise.
+    el.breatheBtn.classList.add('hidden');
+    el.breatheNote.classList.add('hidden');
+    el.breathePanel.classList.add('hidden');
+    el.panel.classList.add('hidden');
+    breathing = false;
+    clearBreathTimers();
     setTimeout(() => {
       goTo(`https://${(match && match.pattern) || site}`);
     }, 900);
+  }
+
+  /* ---------------- breathing exercise ---------------- */
+
+  function clearBreathTimers() {
+    for (const t of breathTimers) clearTimeout(t);
+    breathTimers = [];
+  }
+
+  function breathPhases(total) {
+    // One calm cycle is 11s; repeat until the configured minimum is covered.
+    const cycle = [
+      { name: 'Breathe in', seconds: 4, cls: 'inhale' },
+      { name: 'Hold', seconds: 2, cls: 'hold' },
+      { name: 'Breathe out', seconds: 5, cls: 'exhale' },
+    ];
+    const queue = [];
+    let sum = 0;
+    while (sum < total) {
+      for (const phase of cycle) {
+        if (sum >= total) break;
+        queue.push(phase);
+        sum += phase.seconds;
+      }
+    }
+    return queue;
+  }
+
+  function openBreathe() {
+    if (!breatheConfig || !breatheConfig.enabled) return;
+    if (breathing) return;
+    el.panel.classList.add('hidden');
+    el.breathePanel.classList.remove('hidden');
+    el.breatheBtn.classList.add('hidden');
+    startBreathing();
+  }
+
+  function startBreathing() {
+    breathing = true;
+    clearBreathTimers();
+    const phases = breathPhases(breatheConfig.durationSeconds);
+    const totalSeconds = phases.reduce((sum, p) => sum + p.seconds, 0);
+    let elapsed = 0;
+
+    el.breatheTitle.textContent = 'Breathe with the ring';
+    el.breatheLede.textContent = `In, hold, out. Finish the cycle and ${siteName} opens for ${breatheConfig.minutes} minute${
+      breatheConfig.minutes === 1 ? '' : 's'
+    } — one of your pauses.`;
+    el.breatheMsg.textContent = '';
+    el.breathBar.style.width = '0%';
+
+    let index = 0;
+    const runPhase = () => {
+      if (!breathing) return;
+      if (index >= phases.length) return finishBreathing();
+
+      const phase = phases[index++];
+      el.orb.className = 'breath-orb ' + phase.cls;
+      el.phaseLabel.textContent = phase.name;
+
+      let left = phase.seconds;
+      el.phaseCount.textContent = String(left);
+      const ticker = setInterval(() => {
+        if (!breathing) return clearInterval(ticker);
+        left -= 1;
+        el.phaseCount.textContent = String(Math.max(0, left));
+        elapsed += 1;
+        el.breathBar.style.width = Math.min(100, (elapsed / totalSeconds) * 100) + '%';
+        if (left <= 0) {
+          clearInterval(ticker);
+          runPhase();
+        }
+      }, 1000);
+      // Track intervals so closing the panel stops everything.
+      breathTimers.push(ticker);
+    };
+    runPhase();
+  }
+
+  async function finishBreathing() {
+    breathing = false;
+    clearBreathTimers();
+    el.orb.className = 'breath-orb done';
+    el.phaseLabel.textContent = 'Done';
+    el.phaseCount.textContent = '✓';
+    el.breathBar.style.width = '100%';
+    el.breatheTitle.textContent = 'That was the pause.';
+    el.breatheMsg.textContent = 'Unlocking…';
+
+    const res = await send({ type: 'breathePass', site, tabId: Number(params.get('tab')) || null });
+    if (res && res.ok) {
+      el.breatheLede.textContent = `Open for ${res.minutes} minute${res.minutes === 1 ? '' : 's'} — ${
+        res.remainingToday
+      } pause${res.remainingToday === 1 ? '' : 's'} left today.`;
+      el.breatheMsg.textContent = `Going to ${siteName} now.`;
+      toast(`Breathed through it — ${res.minutes} min`);
+      const url = res.url || `https://${site}`;
+      setTimeout(() => goTo(url, Number(params.get('tab')) || null), 900);
+    } else {
+      const why =
+        res && res.reason === 'daily-limit'
+          ? 'You are out of pauses for today.'
+          : res && res.reason === 'too-soon'
+          ? 'It is too soon after your last pause.'
+          : res && res.reason === 'already-paused'
+          ? 'Another pause is already running — this page will use that one.'
+          : res && res.reason === 'disabled'
+          ? 'Pauses are switched off in settings, so there is nothing to spend.'
+          : 'The shield could not be paused.';
+      el.breatheTitle.textContent = 'The breath was still worth it.';
+      el.breatheLede.textContent = why;
+      el.breatheMsg.textContent = 'Try the hold-to-pause button, or come back later.';
+      toast(why);
+      setTimeout(() => closeBreathe(), 1800);
+    }
+  }
+
+  function closeBreathe() {
+    breathing = false;
+    clearBreathTimers();
+    el.breathePanel.classList.add('hidden');
+    el.orb.className = 'breath-orb';
+    el.phaseLabel.textContent = 'Ready';
+    el.phaseCount.textContent = '—';
+    el.breathBar.style.width = '0%';
+    refresh();
   }
 
   function tick() {
@@ -184,6 +387,9 @@
   const timer = setInterval(tick, 1000);
 
   /* ---------------- pause panel ---------------- */
+
+  el.breatheBtn.addEventListener('click', openBreathe);
+  el.closeBreathe.addEventListener('click', closeBreathe);
 
   el.pause.addEventListener('click', () => {
     el.panel.classList.toggle('hidden');

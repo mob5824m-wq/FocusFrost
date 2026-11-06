@@ -698,3 +698,137 @@ test('focus hours are served by the blocked page, pausable on request', async (t
   await w.flush();
   assert.equal(w.redirects.length, 0, 'the pause punched through');
 });
+
+/* ================================================================== */
+/* breathing through a cooldown                                        */
+/* ================================================================== */
+
+/** A stored state with a live cooldown, the way a broken visit leaves it. */
+function cooledState(pattern, until) {
+  return {
+    day: '2026-11-06',
+    sites: {
+      [pattern]: {
+        lastVisitAt: until - 600000,
+        cooldownUntil: until,
+        cooldownReason: 'left',
+        cooldownSeconds: 600,
+        session: null,
+        blocked: 1,
+        focusSecondsToday: 0,
+        bestFocusSeconds: 0,
+      },
+    },
+    pause: { until: 0, startedAt: 0, minutes: 0, lastPauseAt: 0, usedToday: 0, total: 0 },
+    stats: { day: '2026-11-06', blocked: 1, sessions: 1, focusSeconds: 0 },
+  };
+}
+
+const BREATHE_SETTINGS = Object.assign({}, SETTINGS, {
+  intervention: { enabled: true, type: 'breath', durationSeconds: 5, breatheToPass: true, breatheMinutes: 15 },
+});
+
+test('the cooldown page is told whether breathing can actually open the door', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({
+    ff_settings: BREATHE_SETTINGS,
+    ff_state: cooledState('youtube.com', BASE + 480000),
+  });
+  const res = await w.send({ type: 'blockedConfig', site: 'youtube.com' });
+  assert.equal(res.ok, true);
+  assert.equal(res.intervention.breatheToPass, true);
+  assert.equal(res.breathe.minutes, 15);
+  assert.equal(res.breathe.blockedReason, null);
+  assert.equal(res.pause.canStart, true);
+});
+
+test('the window rounds to a real preset, because strict mode would reject it otherwise', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({
+    ff_settings: Object.assign({}, BREATHE_SETTINGS, {
+      intervention: { enabled: true, type: 'breath', durationSeconds: 5, breatheToPass: true, breatheMinutes: 2 },
+    }),
+    ff_state: cooledState('youtube.com', BASE + 480000),
+  });
+  const res = await w.send({ type: 'blockedConfig', site: 'youtube.com' });
+  // presets are [5, 15, 30]; asking for 2 must not produce a refused pause.
+  assert.equal(res.breathe.minutes, 5);
+
+  const pass = await w.send({ type: 'breathePass', site: 'youtube.com' });
+  assert.equal(pass.ok, true);
+  assert.equal(pass.pause.minutes, 5);
+});
+
+test('breathing spends a pause and lifts the cooldown', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({
+    ff_settings: BREATHE_SETTINGS,
+    ff_state: cooledState('youtube.com', BASE + 480000),
+  });
+
+  const res = await w.send({ type: 'breathePass', site: 'youtube.com' }, { id: 'ff', tab: { id: 7 } });
+  assert.equal(res.ok, true, 'a successful breathe must report ok');
+  assert.equal(res.minutes, 15);
+  assert.equal(res.remainingToday, 1);
+  assert.equal(res.pause.active, true);
+  assert.equal(res.url, 'https://youtube.com');
+
+  // The cooldown is gone, and the tab got a pass so it can load.
+  const site = res.sites.find((s) => s.pattern === 'youtube.com');
+  assert.equal(site.cooldownUntil, 0);
+
+  w.redirects.length = 0;
+  const tab = w.addTab('https://youtube.com/');
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 0, 'the pause lets it through');
+});
+
+test('a refused pause must not report success', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  // Pauses switched off entirely: the breath cannot buy anything.
+  const w = await bootWorker({
+    ff_settings: Object.assign({}, BREATHE_SETTINGS, {
+      pause: Object.assign({}, SETTINGS.pause, { maxPerDay: 0 }),
+    }),
+    ff_state: cooledState('youtube.com', BASE + 480000),
+  });
+
+  const cfg = await w.send({ type: 'blockedConfig', site: 'youtube.com' });
+  assert.equal(cfg.pause.canStart, false);
+  assert.equal(cfg.breathe.blockedReason, 'disabled');
+
+  const res = await w.send({ type: 'breathePass', site: 'youtube.com' });
+  assert.equal(res.ok, false, 'statusPayload must not mask a failure');
+  assert.equal(res.reason, 'disabled');
+  assert.equal(res.pause.active, false);
+});
+
+test('the daily cap applies to breathing too', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const state = cooledState('youtube.com', BASE + 480000);
+  state.pause.usedToday = 2; // both pauses already spent
+  const w = await bootWorker({ ff_settings: BREATHE_SETTINGS, ff_state: state });
+
+  const cfg = await w.send({ type: 'blockedConfig', site: 'youtube.com' });
+  assert.equal(cfg.breathe.blockedReason, 'daily-limit');
+
+  const res = await w.send({ type: 'breathePass', site: 'youtube.com' });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, 'daily-limit');
+  // The cooldown is untouched: no free back door.
+  const site = res.sites.find((s) => s.pattern === 'youtube.com');
+  assert.ok(site.cooldownUntil > BASE);
+});
+
+test('the pause gap applies to breathing too', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const first = await bootWorker({ ff_settings: BREATHE_SETTINGS, ff_state: cooledState('youtube.com', BASE + 480000) });
+  await first.send({ type: 'breathePass', site: 'youtube.com' });
+  await first.send({ type: 'stopPause' });
+
+  // Same worker, immediately afterwards: the 30 minute gap is what stops us.
+  const second = await first.send({ type: 'breathePass', site: 'youtube.com' });
+  assert.equal(second.ok, false);
+  assert.equal(second.reason, 'too-soon');
+});

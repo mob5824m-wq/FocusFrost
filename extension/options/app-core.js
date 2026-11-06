@@ -56,6 +56,15 @@
     });
   }
 
+  /** True while the user is interacting with a control inside the panes. */
+  App.isEditing = function isEditing() {
+    const active = document.activeElement;
+    if (!active) return false;
+    const panes = document.getElementById('panes');
+    if (!panes || !panes.contains(active)) return false;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable;
+  };
+
   App.load = async function load() {
     const res = await App.send({ type: 'status' });
     if (!res || !res.ok) {
@@ -113,9 +122,11 @@
           savePending = false;
           clearTimeout(saveTimer);
           saveTimer = setTimeout(() => App.save(), 0);
-        } else if (typeof App.render === 'function') {
-          // Reflect anything derived from what was just saved.
-          App.render();
+        } else if (typeof App.renderChrome === 'function') {
+          // Update the sidebar/badges only. Re-rendering the pane here would rip
+          // out the very slider or text field the user is still holding, which
+          // is what made settings feel like they were fighting back.
+          App.renderChrome();
         }
         return res;
       }
@@ -180,26 +191,74 @@
   App.clock = Util.clock;
   App.human = Util.humanDuration;
 
-  /** A labelled range slider that writes through to `obj[key]`. */
+  /**
+   * A labelled range slider that writes through to `obj[key]`.
+   *
+   * `oninput` only updates the readout, so dragging stays smooth and nothing is
+   * written 60 times a second. The value is committed once the drag ends
+   * (`change`), plus a short debounce so a slow drag still saves while held.
+   */
   App.slider = function slider(opts) {
     const { label, value, min, max, step, format, hint, onChange } = opts;
     const out = App.el('span', { class: 'val', text: format(value) });
+    let settle = null;
+    const commit = (next) => {
+      clearTimeout(settle);
+      onChange(next);
+    };
     const input = App.el('input', {
       type: 'range',
       min: String(min),
       max: String(max),
       step: String(step || 1),
       value: String(value),
+      'aria-label': label,
       oninput: (e) => {
         const next = Number(e.target.value);
         out.textContent = format(next);
-        onChange(next);
+        // Keep the live readout moving, but only commit after a pause in the drag.
+        clearTimeout(settle);
+        settle = setTimeout(() => commit(next), 400);
       },
+      onchange: (e) => commit(Number(e.target.value)),
     });
     return App.el('div', { class: 'slider' }, [
       App.el('div', { class: 'sl-top' }, [App.el('label', { text: label }), out]),
       input,
       hint ? App.el('p', { class: 'hint', text: hint }) : null,
+    ]);
+  };
+
+  /**
+   * A text field that saves as you type *without* being re-rendered underneath
+   * you. `onValue` is called on every keystroke (cheap, local); `onCommit` is
+   * called when the field loses focus or the user stops typing.
+   */
+  App.textField = function textField(opts) {
+    const { label, value, placeholder, maxlength, rows, hint, onValue, onCommit } = opts;
+    const tag = rows ? 'textarea' : 'input';
+    const field = App.el(tag, {
+      type: rows ? null : 'text',
+      rows: rows ? String(rows) : null,
+      value: rows ? null : String(value == null ? '' : value),
+      placeholder: placeholder || '',
+      maxlength: maxlength ? String(maxlength) : null,
+      spellcheck: 'true',
+      oninput: (e) => {
+        if (onValue) onValue(e.target.value);
+      },
+      onchange: (e) => {
+        if (onCommit) onCommit(e.target.value);
+      },
+      onblur: (e) => {
+        if (onCommit) onCommit(e.target.value);
+      },
+    });
+    if (rows) field.value = String(value == null ? '' : value);
+    return App.el('label', { class: 'field' }, [
+      label ? App.el('span', { text: label }) : null,
+      field,
+      hint ? App.el('span', { class: 'hint', text: hint }) : null,
     ]);
   };
 

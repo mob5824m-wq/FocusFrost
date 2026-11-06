@@ -3,7 +3,7 @@
   'use strict';
 
   const App = window.FFApp;
-  const { SECTIONS, RENDERERS, icon } = window.FFSections;
+  const { SECTIONS, RENDERERS, REFRESHERS, icon } = window.FFSections;
 
   const navEl = document.getElementById('nav');
   const panesEl = document.getElementById('panes');
@@ -143,6 +143,24 @@
     renderPane();
   };
 
+  /**
+   * Rebuild the current section in place — used when the section itself adds or
+   * removes something, never as a side effect of saving.
+   */
+  App.refreshPane = function refreshPane() {
+    const build = REFRESHERS[App.section];
+    if (!build) return renderPane();
+    const current = document.getElementById('pane-' + App.section);
+    if (!current) return renderPane();
+    const next = App.el('section', { class: 'pane on', id: 'pane-' + App.section });
+    next.appendChild(build());
+    // Keep the scroll position: an add/remove should not jump you to the top.
+    const scroller = document.getElementById('panes');
+    const y = scroller ? scroller.scrollTop : 0;
+    current.replaceWith(next);
+    if (scroller) scroller.scrollTop = y;
+  };
+
   /* ------------------------------------------------------------------ */
   /* live status poll                                                   */
   /* ------------------------------------------------------------------ */
@@ -241,15 +259,9 @@ async function poll() {
   App.status = res;
   // Do not stomp on the working copy while the user is editing.
   if (!App.dirty) mergeSettings(res);
+  // Only the sidebar nudges. Rebuilding a pane on a timer is how a slider jumps
+  // back mid-drag and how a half-typed sentence disappears.
   App.renderChrome();
-
-  // Re-render live-data sections, but never while a control has focus.
-  const active = document.activeElement;
-  const editing =
-    active && panesEl.contains(active) && /INPUT|TEXTAREA|SELECT/.test(active.tagName);
-  if (!editing && ['overview', 'intentions', 'schedule'].includes(App.section)) {
-    renderPane();
-  }
 }
 
   /* ------------------------------------------------------------------ */

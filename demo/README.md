@@ -40,7 +40,7 @@ No dependencies, no build step. `PORT=8080 node demo/server.js` if 4173 is taken
 2. **Get through it.** Either *Close the tab* (counted as a walk-away) or continue with an intention. Only then does the chip appear with a 20s grace countdown.
 3. **Leave tab**, then **Return** quickly — you are back on the same visit for free.
 4. **+1m**, then **Leave tab**. The tab is closed instantly and YouTube starts cooling down.
-5. **Open** it again: you land on the cooling-down page with the real countdown. The gate does not get you out of a cooldown.
+5. **Open** it again: you land on the cooling-down page with the real countdown. The gate does not get you out of a cooldown. Hit **Breathe your way in** and sit through the cycle — it spends one of your two daily pauses and opens the site for a short window.
 6. **+30m** (or use the pause button in the popup): the gate is back, and clearing it opens the site.
 
 Try **Settings page →** to turn the gate off, switch to 4-7-8 breathing, add a focus window that spans the whole day, or ration pauses to zero — the fake browser reacts on your next click.

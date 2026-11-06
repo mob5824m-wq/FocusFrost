@@ -135,3 +135,63 @@ h1 { font-size: 27px; letter-spacing: -0.03em; }
   h1 { font-size: 22px; }
   .wrap-max { padding: 18px 14px 32px; }
 }
+
+/* ---------- breathing exercise: the way back in ---------- */
+
+.breath-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 190px;
+  margin: 4px 0 2px;
+}
+
+.breath-orb {
+  position: absolute;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, rgba(127, 211, 255, 0.32), rgba(74, 157, 245, 0.08) 70%);
+  box-shadow: 0 0 0 1px rgba(127, 211, 255, 0.28), 0 0 42px rgba(74, 157, 245, 0.22);
+  transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 1s ease;
+  transform: scale(0.9);
+}
+.breath-core {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(127, 211, 255, 0.18));
+  opacity: 0.65;
+}
+.breath-orb.inhale { transform: scale(1.22); box-shadow: 0 0 0 1px rgba(127, 211, 255, 0.5), 0 0 64px rgba(74, 157, 245, 0.36); }
+.breath-orb.hold { transform: scale(1.22); box-shadow: 0 0 0 1px rgba(157, 140, 255, 0.45), 0 0 52px rgba(157, 140, 255, 0.3); }
+.breath-orb.exhale { transform: scale(0.86); }
+.breath-orb.done { transform: scale(1.05); box-shadow: 0 0 0 1px rgba(69, 214, 168, 0.55), 0 0 56px rgba(69, 214, 168, 0.3); }
+
+.breath-read {
+  position: relative;
+  text-align: center;
+  line-height: 1.1;
+}
+.breath-read b { display: block; font-size: 13px; letter-spacing: 0.02em; }
+.breath-read span { display: block; font-size: 26px; font-weight: 700; color: var(--muted); margin-top: 2px; }
+
+.breath-progress {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(150, 190, 255, 0.14);
+  overflow: hidden;
+}
+.breath-progress > div {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, rgba(74, 157, 245, 0.9), rgba(127, 211, 255, 0.95));
+  transition: width 0.9s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breath-orb { transition: none; }
+}

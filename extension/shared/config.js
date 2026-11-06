@@ -118,6 +118,11 @@
           'Put the kettle on and come back in ten minutes. If you still want it then, it will still be here.',
         allowSkip: false,
         reinterveneSeconds: 0, // 0 = off. Otherwise: seconds of focused time before a second pause.
+        // The cooldown page offers a breathing exercise as a way back in. It
+        // spends one of the day's pauses: the cooldown should cost something,
+        // and this keeps a single ledger for every way through the shield.
+        breatheToPass: true,
+        breatheMinutes: 2,
       },
 
       pause: {
@@ -255,6 +260,8 @@
           base.intervention.reinterveneSeconds,
           LIMITS.reinterveneSeconds
         ),
+        breatheToPass: ivIn.breatheToPass !== false,
+        breatheMinutes: num(ivIn.breatheMinutes, base.intervention.breatheMinutes, LIMITS.pauseMinutes),
       },
       pause: {
         holdMs: num(pauseIn.holdMs, base.pause.holdMs, LIMITS.holdMs),

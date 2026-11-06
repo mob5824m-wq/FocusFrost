@@ -272,7 +272,7 @@
       });
       input.value = '';
       App.touch(true);
-      rerender();
+      App.refreshPane();
     };
     frag.appendChild(
       el('div', { class: 'card add-card' }, [
@@ -320,7 +320,7 @@
                 x.maxSessionSeconds = first.maxSessionSeconds;
               });
               App.touch(true);
-              rerender();
+              App.refreshPane();
               App.toast('Applied to every site');
             },
           }),
@@ -429,7 +429,7 @@
                   e.stopPropagation();
                   await App.send({ type: 'clearSite', pattern: site.pattern });
                   await App.load();
-                  rerender();
+                  App.refreshPane();
                   App.toast(`${site.label} unlocked`);
                 },
               })
@@ -441,7 +441,7 @@
               e.stopPropagation();
               App.settings.sites = App.settings.sites.filter((x) => x.pattern !== site.pattern);
               App.touch(true);
-              rerender();
+              App.refreshPane();
             },
           }),
         ]),
@@ -479,7 +479,9 @@
           onChange: (v) => {
             iv.enabled = v;
             App.touch(true);
-            rerender();
+            // Only the tuning controls below depend on this; do not rebuild the
+            // switch the user just clicked.
+            App.refreshPane();
           },
         }),
       ])
@@ -497,7 +499,7 @@
             iv.type = type.id;
             iv.enabled = true;
             App.touch(true);
-            rerender();
+            App.refreshPane(); // the tuning controls depend on the type
             reloadPreview();
           },
         },
@@ -556,6 +558,37 @@
         },
       })
     );
+    /* the cooling-down page: breathe your way back in */
+    tuning.push(
+      App.switchRow({
+        title: 'Offer breathing on the cooldown page',
+        hint: 'When a site is locked, the page offers a breathing exercise. Finishing it costs one of the day\u2019s pauses — the same ledger as the hold button, so a cooldown still costs something.',
+        value: iv.breatheToPass,
+        onChange: (v) => {
+          iv.breatheToPass = v;
+          App.touch(true);
+          App.refreshPane();
+        },
+      })
+    );
+    if (iv.breatheToPass) {
+      tuning.push(
+        App.slider({
+          label: 'Window the breath buys',
+          value: iv.breatheMinutes,
+          min: 1,
+          max: 30,
+          step: 1,
+          format: (v) => (v === 1 ? '1 min' : v + ' min'),
+          hint: 'How long the site opens for. In strict pause mode this is rounded up to the nearest allowed length.',
+          onChange: (v) => {
+            iv.breatheMinutes = v;
+            App.touch();
+          },
+        })
+      );
+    }
+
     tuning.push(
       App.switchRow({
         title: 'Require an intention',
@@ -585,17 +618,27 @@
           el('p', { text: 'Keep it concrete. “Go for a walk” is easy to ignore; “put the kettle on” is not.' }),
         ]),
       ]),
-      el('div', { style: 'padding:0 16px 16px' }, [
-        el('textarea', {
-          rows: '2',
-          maxlength: '240',
-          style: 'resize:vertical',
-          oninput: (e) => {
-            iv.alternative = e.target.value;
-            App.touch();
-          },
-        }),
-      ])
+      el(
+        'div',
+        { style: 'padding:0 16px 16px' },
+        [
+          App.textField({
+            value: iv.alternative,
+            rows: 2,
+            maxlength: 240,
+            placeholder: 'Put the kettle on and come back in ten minutes…',
+            onValue: (v) => {
+              iv.alternative = v;
+              App.touch();
+            },
+            onCommit: (v) => {
+              iv.alternative = v;
+              App.touch(true);
+              reloadPreview();
+            },
+          }),
+        ]
+      )
     );
 
     frag.appendChild(group('Tuning', tuning));
@@ -782,7 +825,7 @@
           onChange: (v) => {
             s.schedule.enabled = v;
             App.touch(true);
-            rerender();
+            App.refreshPane();
           },
         }),
         App.switchRow({
@@ -820,14 +863,18 @@
       list.appendChild(
         el('div', { class: 'block-row' + (block.enabled ? '' : ' off') }, [
           el('div', { class: 'inline', style: 'justify-content:space-between' }, [
-            el('input', {
-              type: 'text',
+            App.textField({
               value: block.label,
-              oninput: (e) => {
-                block.label = e.target.value;
+              placeholder: 'Deep work',
+              maxlength: 40,
+              onValue: (v) => {
+                block.label = v;
                 App.touch();
               },
-              style: 'max-width:280px',
+              onCommit: (v) => {
+                block.label = v;
+                App.touch(true);
+              },
             }),
             el('label', { class: 'switch' }, [
               el('input', {
@@ -835,8 +882,10 @@
                 checked: block.enabled,
                 onchange: (e) => {
                   block.enabled = e.target.checked;
+                  // Toggle the row in place: a full rebuild would steal focus
+                  // and collapse the window you are editing.
+                  e.target.closest('.block-row').classList.toggle('off', !block.enabled);
                   App.touch(true);
-                  rerender();
                 },
               }),
               el('span'),
@@ -857,8 +906,10 @@
                     onclick: () => {
                       if (block.days.includes(idx)) block.days = block.days.filter((d) => d !== idx);
                       else block.days = block.days.concat(idx).sort();
+                      const on = block.days.includes(idx);
+                      e.target.classList.toggle('on', on);
+                      e.target.setAttribute('aria-pressed', on ? 'true' : 'false');
                       App.touch(true);
-                      rerender();
                     },
                   })
                 )
@@ -867,12 +918,10 @@
             timeField('From', block.start, (v) => {
               block.start = v;
               App.touch(true);
-              rerender();
             }),
             timeField('Until', block.end, (v) => {
               block.end = v;
               App.touch(true);
-              rerender();
             }),
             el('button', {
               class: 'btn btn-sm btn-danger',
@@ -880,7 +929,7 @@
               onclick: () => {
                 s.schedule.blocks = s.schedule.blocks.filter((b) => b.id !== block.id);
                 App.touch(true);
-                rerender();
+                App.refreshPane();
               },
             }),
           ]),
@@ -909,7 +958,7 @@
             });
             s.schedule.enabled = true;
             App.touch(true);
-            rerender();
+            App.refreshPane();
           },
         }),
         el('button', {
@@ -926,7 +975,7 @@
             });
             s.schedule.enabled = true;
             App.touch(true);
-            rerender();
+            App.refreshPane();
           },
         }),
       ])
@@ -980,7 +1029,7 @@
             onclick: async () => {
               await App.send({ type: 'stopPause' });
               await App.load();
-              rerender();
+              App.refreshPane();
               App.toast('Tracking resumed');
             },
           }),
@@ -1022,7 +1071,7 @@
               if (s.pause.presets.length <= 1) return App.toast('Keep at least one option');
               s.pause.presets = s.pause.presets.filter((m) => m !== minutes);
               App.touch(true);
-              rerender();
+              App.refreshPane();
             },
           }),
         ])
@@ -1047,7 +1096,7 @@
                 s.pause.presets = s.pause.presets.concat(minutes).sort((a, b) => a - b);
                 newPreset.value = '';
                 App.touch(true);
-                rerender();
+                App.refreshPane();
               },
             }),
           ]),
@@ -1335,7 +1384,7 @@
               if (!confirm('Release every cooldown and end the current pause?')) return;
               await App.send({ type: 'clearCooldowns' });
               await App.load();
-              rerender();
+              App.refreshPane();
               App.toast('All locks cleared');
             },
           }),
@@ -1352,7 +1401,7 @@
               if (!confirm('Reset all statistics and clear the activity log?')) return;
               await App.send({ type: 'resetStats' });
               await App.load();
-              rerender();
+              App.refreshPane();
               App.toast('Statistics reset');
             },
           }),
@@ -1415,9 +1464,26 @@
     advanced: renderAdvanced,
   };
 
+  /** Rebuild the current section after a structural change (add/remove). */
   function rerender() {
-    App.render();
+    App.refreshPane();
   }
 
-  window.FFSections = { SECTIONS, RENDERERS, icon };
+  /**
+   * Explicit refreshers for sections that show live data.
+   *
+   * These are deliberately *not* used automatically after a save: replacing a
+   * pane while the user is dragging a slider or typing into a field destroys the
+   * control they are holding. The section that mutates something rebuilds itself
+   * when it means to (e.g. adding a site), and App.renderChrome keeps the rest of
+   * the page honest.
+   */
+  const REFRESHERS = {
+    overview: renderOverview,
+    sites: renderSites,
+    schedule: renderSchedule,
+    intentions: renderIntentions,
+  };
+
+  window.FFSections = { SECTIONS, RENDERERS, REFRESHERS, icon };
 })();

@@ -592,9 +592,31 @@ chrome.runtime.onConnect.addListener((port) => {
 /* runtime messages (popup, options, blocked page)                     */
 /* ------------------------------------------------------------------ */
 
-function statusPayload() {
+/**
+ * The live snapshot every page needs, plus a result envelope.
+ *
+ * `ok` defaults to true, but a handler that failed must be able to say so:
+ * spreading the snapshot after `ok: false` used to flip it straight back to
+ * true, which made a refused pause look like a success.
+ */
+/**
+ * The pause length the breathing exercise on the cooling-down page buys.
+ *
+ * Strict mode only accepts the configured presets, so the requested window is
+ * rounded to one of them — a ritual that cannot succeed should be decided
+ * before the user starts breathing, not after.
+ */
+function breatheWindow() {
+  const wanted = Math.round((cfg.intervention && cfg.intervention.breatheMinutes) || 2);
+  if (!cfg.pause.strict) return wanted;
+  const presets = (cfg.pause.presets || []).slice().sort((a, b) => a - b);
+  if (!presets.length) return wanted;
+  return presets.includes(wanted) ? wanted : presets.find((p) => p >= wanted) || presets[presets.length - 1];
+}
+
+function statusPayload(extra) {
   const snap = Engine.snapshot(state, cfg, Date.now());
-  return { ok: true, settings: cfg, behavior: cfg.behavior, defaults: cfg.defaults, ...snap };
+  return { ok: true, settings: cfg, behavior: cfg.behavior, defaults: cfg.defaults, ...snap, ...(extra || {}) };
 }
 
 const handlers = {
@@ -619,7 +641,7 @@ const handlers = {
       await revalidateOpenTabs();
       broadcastStatus();
     }
-    return { ...statusPayload(), result: res };
+    return statusPayload({ result: res });
   },
 
   async stopPause() {
@@ -627,7 +649,7 @@ const handlers = {
     await persistNow();
     await revalidateOpenTabs();
     broadcastStatus();
-    return { ...statusPayload(), result: res };
+    return statusPayload({ result: res });
   },
 
   async endSession(message) {
@@ -640,7 +662,7 @@ const handlers = {
       await persistNow();
     }
     updateBadge();
-    return { ...statusPayload(), result: res };
+    return statusPayload({ result: res });
   },
 
   /** The intervention gate asks for its config (and the pause gate). */
@@ -680,6 +702,54 @@ const handlers = {
     broadcastStatus();
     updateBadge();
     return { ok: true, site: site.pattern };
+  },
+
+  /**
+   * The cooling-down page offers a breathing exercise as a way back in.
+   *
+   * It spends one of the day's pauses, exactly like the hold-to-pause button:
+   * one ledger, one limit, no free back door. The page is told up front whether
+   * that is possible (`blockedConfig`) and only shows the exercise if it is.
+   */
+  async breathePass(message, sender) {
+    const now = Date.now();
+    Engine.rollDay(state, now);
+
+    const res = Engine.startPause(state, cfg, breatheWindow(), now);
+    if (!res.ok) return statusPayload({ ok: false, reason: res.reason, remainingToday: res.remainingToday });
+
+    // The pause lifted every lockout; let the page know it can go on.
+    const site = Engine.findSite(cfg, message.site || '');
+    await persistNow();
+    notify('FocusFrost paused', `You breathed through it — ${res.minutes} minutes, ${res.remainingToday} pause${res.remainingToday === 1 ? '' : 's'} left today.`);
+    broadcastStatus();
+    updateBadge();
+
+    const tabId = (sender && sender.tab && sender.tab.id) || Number(message.tabId) || null;
+    if (tabId != null && tabId > 0 && site) grantPass(tabId, site.pattern, now);
+
+    return statusPayload({
+      url: site ? `https://${site.pattern}` : null,
+      minutes: res.minutes,
+      remainingToday: res.remainingToday,
+    });
+  },
+
+  /** What the cooling-down page needs to decide whether to offer the breath. */
+  async blockedConfig(message) {
+    const now = Date.now();
+    Engine.rollDay(state, now);
+    const snap = Engine.snapshot(state, cfg, now);
+    const site = Engine.findSite(cfg, message.site || '');
+    return {
+      ok: true,
+      site: site ? site.pattern : null,
+      label: site ? site.label : '',
+      intervention: cfg.intervention,
+      pause: snap.pause,
+      breathe: { minutes: breatheWindow(), blockedReason: snap.pause.canStart ? null : snap.pause.blockedReason },
+      settings: cfg,
+    };
   },
 
   async clearSite(message) {

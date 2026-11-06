@@ -41,6 +41,14 @@ Underneath every intervention is an **"or do this instead"** line you write your
 
 Optionally, the gate comes back **mid-visit** after N seconds of focused scrolling (off by default; set it in the Friction section in 30-second steps). Finish it and you stay; close it and the visit ends and the cooldown starts. This is the part a single-entry pause cannot do.
 
+### Breathing out of a cooldown
+
+When a site is locked, the cooling-down page offers a **breathing exercise** instead of a wall. Finish the cycle (a breath in, a hold, a breath out — repeated to your configured minimum) and the site opens for a short window.
+
+It is not free. **Finishing the breath spends one of the day's pauses**, from the same rationed ledger as the hold-to-pause button: same daily cap, same minimum gap. If you are out of pauses, the page says so plainly rather than offering a ritual that cannot open anything. The 6-second hold button stays alongside it, so there are two ways through and both cost the same thing.
+
+That is deliberate. A cooldown you can always breathe your way past is not a cooldown — it is a speed bump with a nice animation. Breathe, and it costs you a pause you cannot spend again today.
+
 ### Grace window (default 20s)
 
 The moment a tracked page loads, a grace timer starts. If you leave and come back **inside** that window, nothing happens — no penalty, no reset. It is there so a typo, a misclick or a glance at a link does not cost you.
@@ -118,7 +126,7 @@ Inside the sandbox you get a fake browser with tabs you can open, leave, return 
 | --- | --- |
 | **Popup** (toolbar) | Live state — grace, focus countdown, cooldown, pause — plus the hold-to-pause button and per-site status. |
 | **On-page chip** | A small frosty pill bottom-right with the current clock. Click to collapse it to a dot. |
-| **Blocked page** | The cooling-down wall, with a live countdown and the pause panel. |
+| **Blocked page** | The cooling-down wall: live countdown, the breathing exercise, and the hold-to-pause panel. |
 | **Settings (full page)** | The dedicated settings web app — see below. |
 | **Dashboard** | Today's metrics, per-site focus time, live engine state, and a rules sandbox. |
 
@@ -150,6 +158,7 @@ Everything autosaves 260 ms after you stop typing or dragging — there is no Sa
 - **Pauses per day / minimum gap** — set `0` per day to disable pausing entirely.
 - **Intervention type and length** — including turning the gate off entirely for a pure-cooldown setup.
 - **Re-intervention** — how many minutes of focused scrolling earn a second look.
+- **Breathing on the cooldown page** — on by default; the window it buys is configurable, and strict pause mode rounds it to an allowed length.
 
 Everything is clamped on the way in, so a hand-edited or synced settings blob can never turn a 10-minute cooldown into a 10-day one.
 

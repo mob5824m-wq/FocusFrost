@@ -1,0 +1,16 @@
+{
+  "name": "focusfrost",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A customizable cooldown for distracting websites, with a grace window and a time-boxed pause.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "sandbox": "node demo/server.js",
+    "icons": "python3 tools/make-icons.py",
+    "zip": "cd extension && zip -qr ../focusfrost-1.0.0.zip . -x '.*'"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

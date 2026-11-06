@@ -129,6 +129,22 @@
   }
 
   /**
+   * Show exactly one stage. Every stage lives in the same <main>, and the page
+   * does not scroll, so a stage left visible under the current one pushes the
+   * footer — and every button in it — off the bottom of the screen.
+   *
+   * `choices` is the footer with the continue / close buttons, so it is tied to
+   * the stage rather than toggled separately: only the outcome stage hides it.
+   */
+  function showStage(name) {
+    const stages = { breath: el.breath, reflect: el.reflect, type: el.type, done: el.done };
+    for (const [key, node] of Object.entries(stages)) {
+      if (node) node.classList.toggle('hidden', key !== name);
+    }
+    showChoices(name !== 'done');
+  }
+
+  /**
    * The stage sections sit above the footer, so a footer only makes sense for
    * the stage you are actually on. Breathing keeps its choices hidden until the
    * breath is done; the text stages show them straight away (the continue
@@ -160,8 +176,8 @@
   /* ------------------------------------------------------------------ */
 
   function startBreathing(fourSevenEight) {
-    el.breath.classList.remove('hidden');
-    showChoices(false);
+    showStage('breath');
+    showChoices(false); // the breath comes first; the buttons come after it
     el.continueBtn.disabled = true;
 
     // 4-7-8 runs one structured cycle; the plain breath gets two calm cycles.
@@ -230,7 +246,7 @@
   /* ------------------------------------------------------------------ */
 
   function startReflection() {
-    el.reflect.classList.remove('hidden');
+    showStage('reflect');
     showChoices(true);
 
     if (config.type === 'intention') {
@@ -344,7 +360,7 @@
   ];
 
   function startTyping() {
-    el.type.classList.remove('hidden');
+    showStage('type');
     showChoices(true);
 
     const words = PHRASES[Math.floor(Math.random() * PHRASES.length)].split(' ');
@@ -451,12 +467,8 @@
   function finish(outcome) {
     if (finished) return;
     finished = true;
-    el.breath.classList.add('hidden');
-    el.reflect.classList.add('hidden');
-    el.type.classList.add('hidden');
-    showChoices(false);
+    showStage('done');
     el.alternative.classList.add('hidden');
-    el.done.classList.remove('hidden');
     el.doneTitle.textContent = outcome === 'continue' ? 'Your call.' : 'Good choice.';
     el.doneLede.textContent =
       outcome === 'continue' ? 'Opening ' + siteLabel + ' — the clock starts now.' : 'Closing this tab.';

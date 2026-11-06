@@ -2,8 +2,14 @@ body.gate {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  overflow: hidden;
   position: relative;
+  /* The gate is one screen tall on purpose, but "one screen" is a promise the
+     content cannot always keep: a long site label, a big alternative, a
+     reflection question wrapping onto three lines on a small window. Clipping
+     the overflow hid the continue button with no way to scroll to it, so the
+     page is allowed to grow and scroll instead. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .aurora {

@@ -109,3 +109,34 @@ test('unlocking the page clears the breath controls it leaves behind', () => {
   assert.match(body, /breatheNote\.classList\.add\('hidden'\)/, 'and its note');
   assert.match(body, /clearBreathTimers\(\)/, 'and any running exercise is stopped');
 });
+
+/* ------------------------------------------------------------------ */
+/* one stage at a time                                                */
+/* ------------------------------------------------------------------ */
+
+test('exactly one stage is on screen, whichever friction you pick', () => {
+  // The breath screen used to stay visible underneath the reflection and typing
+  // stages: an orb with no countdown, plus enough height to push the footer off
+  // a page that does not scroll.
+  const boot = JS.slice(JS.indexOf('function showStage'), JS.indexOf('function showChoices'));
+  assert.match(boot, /const stages = \{/, 'the stages are enumerated in one place');
+  for (const key of ['breath', 'reflect', 'type', 'done']) {
+    assert.match(boot, new RegExp(key + ':'), key + ' is managed');
+  }
+  assert.match(boot, /key !== name/, 'everything but the named stage is hidden');
+});
+
+test('each stage starts through showStage, never by un-hiding itself', () => {
+  for (const fn of ['startBreathing', 'startReflection', 'startTyping', 'finish']) {
+    const src = body(fn);
+    assert.match(src, /showStage\('/, fn + ' picks its stage through showStage');
+    assert.doesNotMatch(src, /stage-\w+'\)\.classList\.remove\('hidden'\)/, fn + ' must not un-hide directly');
+  }
+});
+
+test('the gate may scroll rather than clip the button away', () => {
+  const css = fs.readFileSync(path.join(DIR, 'intervention.css'), 'utf8');
+  const gate = css.slice(css.indexOf('body.gate {'), css.indexOf('}', css.indexOf('body.gate {')));
+  assert.match(gate, /overflow-y:\s*auto/, 'vertical overflow scrolls');
+  assert.doesNotMatch(gate, /overflow:\s*hidden/, 'nothing is clipped');
+});

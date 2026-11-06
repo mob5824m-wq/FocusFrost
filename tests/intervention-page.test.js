@@ -81,3 +81,31 @@ test('the settings-page preview cannot grant a pass or navigate', () => {
   assert.match(body('closeInstead'), /if \(preview\)/, 'close short-circuits');
   assert.match(JS, /nothing was recorded/i, 'and says so on screen');
 });
+
+/* ------------------------------------------------------------------ */
+/* the cooling-down page's breath offer                               */
+/* ------------------------------------------------------------------ */
+
+const BLOCKED = fs.readFileSync(path.join(__dirname, '..', 'extension', 'blocked', 'blocked.js'), 'utf8');
+
+test('the breath offer is re-read on every refresh, never cached', () => {
+  // It used to ask once (`if (!breatheConfig)`), so a page opened before the
+  // day's last pause was spent kept advertising a way in that would fail.
+  assert.match(BLOCKED, /await loadBreatheOffer\(res\)/, 'refresh asks the worker');
+  assert.doesNotMatch(BLOCKED, /if \(!breatheConfig\) await loadBreatheOffer/, 'no cached answer');
+});
+
+test('a refused breath names the actual reason', () => {
+  const reasons = BLOCKED.slice(BLOCKED.indexOf('async function finishBreathing'));
+  for (const reason of ['daily-limit', 'too-soon', 'already-paused', 'disabled']) {
+    assert.match(reasons, new RegExp("'" + reason + "'"), 'handles ' + reason);
+  }
+});
+
+test('unlocking the page clears the breath controls it leaves behind', () => {
+  const src = BLOCKED.slice(BLOCKED.indexOf('function unlocked('));
+  const body = src.slice(0, src.indexOf('\n  }'));
+  assert.match(body, /breatheBtn\.classList\.add\('hidden'\)/, 'the offer is hidden');
+  assert.match(body, /breatheNote\.classList\.add\('hidden'\)/, 'and its note');
+  assert.match(body, /clearBreathTimers\(\)/, 'and any running exercise is stopped');
+});

@@ -214,7 +214,10 @@
 
     renderPauseUi();
     tick();
-    if (!breatheConfig) await loadBreatheOffer(res);
+    // Re-ask every time: a pause taken in another tab, or the daily limit being
+    // hit elsewhere, has to be reflected here. Asking once cached "you have
+    // pauses left" onto a page that was opened minutes ago.
+    await loadBreatheOffer(res);
   }
 
   function unlocked(match) {
@@ -228,6 +231,13 @@
     el.ring.style.stroke = 'var(--mint)';
     el.back.classList.add('hidden');
     el.pause.classList.add('hidden');
+    // The page is opening the site; a stale breath offer would just be noise.
+    el.breatheBtn.classList.add('hidden');
+    el.breatheNote.classList.add('hidden');
+    el.breathePanel.classList.add('hidden');
+    el.panel.classList.add('hidden');
+    breathing = false;
+    clearBreathTimers();
     setTimeout(() => {
       goTo(`https://${(match && match.pattern) || site}`);
     }, 900);
@@ -335,6 +345,10 @@
           ? 'You are out of pauses for today.'
           : res && res.reason === 'too-soon'
           ? 'It is too soon after your last pause.'
+          : res && res.reason === 'already-paused'
+          ? 'Another pause is already running — this page will use that one.'
+          : res && res.reason === 'disabled'
+          ? 'Pauses are switched off in settings, so there is nothing to spend.'
           : 'The shield could not be paused.';
       el.breatheTitle.textContent = 'The breath was still worth it.';
       el.breatheLede.textContent = why;

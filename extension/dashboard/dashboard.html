@@ -53,6 +53,11 @@
         <b id="mPauses">0/0</b>
         <span class="metric-sub" id="mPausesSub">escape hatch</span>
       </div>
+      <div class="metric card">
+        <span class="metric-label">Friction shown</span>
+        <b id="mInterventions">0</b>
+        <span class="metric-sub" id="mInterventionsSub">0 walked away</span>
+      </div>
     </section>
 
     <section class="card">
@@ -105,6 +110,10 @@
             <button class="btn btn-sm" data-sim="+300">+5m</button>
             <button class="btn btn-sm btn-ghost" data-sim="reset">Reset</button>
           </div>
+          <p class="small muted">
+            With interventions on, "Open site" stops at the friction gate below —
+            the same decision the service worker makes before any tab loads.
+          </p>
           <div class="field">
             <label for="simMinutes">Pause length</label>
             <select id="simMinutes"></select>
@@ -116,12 +125,28 @@
           <div class="sim-clock mono" id="simClock">0:00</div>
           <div class="sim-status" id="simStatus">Idle</div>
           <pre class="sim-log mono" id="simLog"></pre>
+
+          <div class="sim-gate hidden" id="simGate">
+            <div class="sim-gate-head">
+              <span class="badge paused" id="simGateBadge">intervention</span>
+              <b id="simGateTitle">YouTube</b>
+            </div>
+            <p class="small muted" id="simGateBody">
+              In the real extension this would be the full-screen friction page.
+            </p>
+            <input id="simIntention" class="sim-intention" type="text" maxlength="90"
+                   placeholder="One line: why do you want this?" />
+            <div class="sim-gate-actions">
+              <button class="btn btn-sm" data-gate="continue">Continue with intention</button>
+              <button class="btn btn-sm btn-primary" data-gate="close">Close the tab</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
     <footer class="dfoot tiny dim">
-      FocusFrost v1.0 — local-only. No accounts, no telemetry, no network requests except site favicons.
+      FocusFrost v1.1 — local-only. No accounts, no telemetry, no network requests except site favicons.
     </footer>
   </div>
 

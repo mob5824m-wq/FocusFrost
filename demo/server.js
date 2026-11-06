@@ -79,7 +79,7 @@ const server = http.createServer((req, res) => {
 
     if (isExtensionPage) {
       const html = fs.readFileSync(file, 'utf8');
-      const tag = '<script src="/demo/preview.js"></script>';
+      const tag = '<script>window.__FF_DEMO = true;</script><script src="/demo/preview.js"></script>';
       // It must run *before* the page's own scripts, which expect chrome.* to
       // already exist. Dropping it at the top of <head> guarantees that.
       const injected = /<head[^>]*>/i.test(html)

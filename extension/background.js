@@ -19,6 +19,7 @@ const Engine = self.FFEngine;
 const CFG_KEY = 'ff_settings';
 const STATE_KEY = 'ff_state';
 const BLOCKED_PAGE = 'blocked/blocked.html';
+const INTERVENTION_PAGE = 'intervention/intervention.html';
 const TICK_ALARM = 'ff-tick';
 
 let cfg = Config.defaultSettings();
@@ -28,6 +29,8 @@ let state = Engine.emptyState(Date.now());
 const ports = new Map();
 /** crude de-dupe so one navigation is not counted as five blocks */
 const recentBlocks = new Map();
+/** tabId -> { site, until }: tabs that just cleared their intervention */
+const pendingPass = new Map();
 
 let persistTimer = null;
 let chain = Promise.resolve();
@@ -129,6 +132,37 @@ function blockedUrl(decision) {
   return chrome.runtime.getURL(`${BLOCKED_PAGE}?${params.toString()}`);
 }
 
+function interventionUrl(decision, target, mode, tabId) {
+  const params = new URLSearchParams();
+  params.set('site', decision.site || '');
+  params.set('target', target || '');
+  params.set('label', decision.label || '');
+  if (mode) params.set('mode', mode);
+  // Carrying the tab id means the gate can grant its pass even if the browser
+  // does not hand us a sender context.
+  if (tabId != null) params.set('tab', String(tabId));
+  return chrome.runtime.getURL(`${INTERVENTION_PAGE}?${params.toString()}`);
+}
+
+/** Did this tab already sit through its intervention for this site? */
+function hasPassed(tabId, site, now) {
+  const pass = pendingPass.get(tabId);
+  if (!pass) return false;
+  if (now > pass.until || pass.site !== site) {
+    pendingPass.delete(tabId);
+    return false;
+  }
+  return true;
+}
+
+function grantPass(tabId, site, now) {
+  if (tabId == null || tabId < 0) return;
+  pendingPass.set(tabId, { site, until: now + 90000 });
+  if (pendingPass.size > 200) {
+    for (const [id, pass] of pendingPass) if (now > pass.until) pendingPass.delete(id);
+  }
+}
+
 function blockKey(tabId, decision, now) {
   return `${tabId}:${decision.site}:${decision.reason}:${Math.floor(now / 1500)}`;
 }
@@ -149,6 +183,11 @@ function patternForTab(tabId) {
     if (st.session && st.session.tabId === tabId) return key;
   }
   return null;
+}
+
+async function siteUrl(tabId) {
+  const tab = await safeTabGet(tabId);
+  return (tab && tab.url) || '';
 }
 
 async function safeTabGet(tabId) {
@@ -249,6 +288,18 @@ async function actOnTab(tabId, decision, opts) {
   const now = Date.now();
   if (!decision) return;
 
+  if (decision.action === 'intervene') {
+    if (!markBlocked(tabId, { site: decision.site, reason: 'intervene' }, now)) return;
+    try {
+      await chrome.tabs.update(tabId, {
+        url: interventionUrl(decision, options.target || '', options.mode || '', tabId),
+      });
+    } catch (err) {
+      console.warn('[FocusFrost] could not open the intervention', err);
+    }
+    return;
+  }
+
   if (decision.action === 'block') {
     if (!markBlocked(tabId, decision, now)) return;
     try {
@@ -306,10 +357,15 @@ async function guardNavigation(tabId, url) {
     return;
   }
   const site = trackedPatternForUrl(url);
-  const decision = Engine.evaluateNavigation(state, cfg, site.pattern, tabId, now);
+  const skipIntervention = hasPassed(tabId, site.pattern, now);
+  const decision = Engine.evaluateNavigation(state, cfg, site.pattern, tabId, now, { skipIntervention });
+  if (skipIntervention) pendingPass.delete(tabId);
   persistSoon();
-  if (decision.action === 'block') await actOnTab(tabId, decision);
-  else updateBadge();
+  if (decision.action === 'block' || decision.action === 'intervene') {
+    await actOnTab(tabId, decision, { target: url });
+  } else {
+    updateBadge();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -433,11 +489,18 @@ chrome.runtime.onConnect.addListener((port) => {
             return;
           }
           pattern = site.pattern;
-          const decision = Engine.evaluateNavigation(state, cfg, site.pattern, tabId, now);
+          const skipIntervention = hasPassed(tabId, site.pattern, now);
+          const decision = Engine.evaluateNavigation(state, cfg, site.pattern, tabId, now, { skipIntervention });
+          if (skipIntervention) pendingPass.delete(tabId);
           persistSoon();
           if (decision.action === 'block') {
             port.postMessage({ type: 'verdict', action: 'block', reason: decision.reason, until: decision.until });
             await actOnTab(tabId, decision);
+            return;
+          }
+          if (decision.action === 'intervene') {
+            port.postMessage({ type: 'verdict', action: 'block', reason: decision.reason });
+            await actOnTab(tabId, decision, { target: msg.href || `https://${site.pattern}/` });
             return;
           }
           ports.set(tabId, port);
@@ -476,6 +539,11 @@ chrome.runtime.onConnect.addListener((port) => {
           if (decision.action === 'block') {
             port.postMessage({ type: 'blocked', reason: decision.reason, until: decision.until });
             await actOnTab(tabId, decision);
+            return;
+          }
+          if (decision.action === 'intervene') {
+            port.postMessage({ type: 'blocked', reason: decision.reason });
+            await actOnTab(tabId, decision, { target: msg.href || siteUrl(tabId), mode: 'again' });
             return;
           }
           port.postMessage({
@@ -573,6 +641,45 @@ const handlers = {
     }
     updateBadge();
     return { ...statusPayload(), result: res };
+  },
+
+  /** The intervention gate asks for its config (and the pause gate). */
+  async interventionConfig(message) {
+    const now = Date.now();
+    Engine.rollDay(state, now);
+    const snap = Engine.snapshot(state, cfg, now);
+    const site = Engine.findSite(cfg, message.url || '');
+    return {
+      ok: true,
+      intervention: cfg.intervention,
+      pause: snap.pause,
+      site: site ? site.pattern : null,
+      label: site ? site.label : '',
+      scheduled: snap.schedule.active,
+    };
+  },
+
+  /** The gate finished: either we continue to the site, or we walk away. */
+  async interventionDone(message, sender) {
+    const now = Date.now();
+    const site = Engine.findSite(cfg, message.site || message.target || '');
+    if (!site) return { ok: true, ignored: true };
+
+    Engine.recordIntervention(state, cfg, site, now, message.outcome === 'close' ? 'close' : 'continue', {
+      intention: message.intention,
+    });
+
+    // Grant the pass to the tab that is asking to continue. The gate page lives
+    // in that very tab; prefer the sender context, fall back to the id it
+    // carried in its URL.
+    if (message.outcome === 'continue') {
+      const tabId = (sender && sender.tab && sender.tab.id) || Number(message.tabId) || null;
+      if (tabId != null && tabId > 0) grantPass(tabId, site.pattern, now);
+    }
+    await persistNow();
+    broadcastStatus();
+    updateBadge();
+    return { ok: true, site: site.pattern };
   },
 
   async clearSite(message) {

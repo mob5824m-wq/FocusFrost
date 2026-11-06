@@ -111,7 +111,7 @@
 
   <script>
     (function () {
-      var params = new URLSearchParams(location.search);
+      var params = new URLSearchParams(window.location.search);
       var host = params.get('host') || 'example.com';
       var tabId = Number(params.get('tab')) || null;
       window.__FF_TAB_ID = tabId;

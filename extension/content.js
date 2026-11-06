@@ -86,6 +86,7 @@
     }
 
     if (msg.type === 'closed' || msg.type === 'blocked') {
+      // The worker is closing us or moving us to a gate/blocked page.
       dead = true;
       teardown();
     }
@@ -261,7 +262,10 @@
   let chipTicker = null;
 
   function teardown() {
-    const el = document.getElementById('ff-shadow-host');
+    // The document can disappear first (tab closed, or the page got discarded)
+    // while a port message is still in flight. Nothing to tear down then.
+    const doc = typeof document === 'undefined' ? null : document;
+    const el = doc && doc.getElementById('ff-shadow-host');
     if (el) el.remove();
     chip = null;
     if (chipTicker) clearInterval(chipTicker);

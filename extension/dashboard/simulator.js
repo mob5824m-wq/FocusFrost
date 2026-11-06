@@ -14,6 +14,9 @@
     let clock = Date.now();
     let tabId = 901;
     let focused = true;
+    // The sandbox has no gate page, so it plays the user's part for them.
+    let gate = null;
+    let lastOutcome = null;
     let lines = [];
     const listeners = [];
 
@@ -43,6 +46,10 @@
         sites: sites.sites,
         pause: sites.pause,
         totals: sites.totals,
+        gate,
+        log: sites.log || [],
+        stats: sites.stats || {},
+        lastOutcome,
       };
     }
 
@@ -58,6 +65,9 @@
       const d = Engine.evaluateNavigation(state, simCfg, site.pattern, tabId, clock);
       if (d.action === 'block') {
         log(`BLOCKED ${site.label} — ${d.reason}${d.until ? ', ' + Math.ceil((d.until - clock) / 1000) + 's left' : ''}`, 'bad');
+      } else if (d.action === 'intervene') {
+        gate = { site: site.pattern, label: site.label, mode: d.reintervention ? 'again' : 'enter', type: simCfg.intervention.type };
+        log(`FRICTION on ${site.label} — ${d.reintervention ? 'doomscroll brake' : 'gate'} (${gate.type}) · the tab waits`, 'warn');
       } else if (d.reason === 'paused') {
         log(`opened ${site.label} (paused mode — rules are off)`, 'ok');
       } else if (d.resumed) {
@@ -66,6 +76,42 @@
         log(`opened ${site.label} — grace window starts (${site.graceSeconds}s)`, 'ok');
       }
       emit();
+    }
+
+    /**
+     * The user finishes (or walks away from) the intervention screen.
+     * 'continue' re-evaluates the navigation with the gate cleared, exactly as
+     * the real gate page does; 'close' is recorded as a walk-away.
+     */
+    function finishGate(outcome, intention) {
+      if (!gate) return log('no intervention is on screen', 'warn');
+      const pattern = gate.site;
+      const site = Engine.findSite(simCfg, pattern);
+      if (site) {
+        Engine.recordIntervention(state, simCfg, site, clock, outcome, {
+          intention,
+          type: gate.type,
+          durationSeconds: simCfg.intervention.durationSeconds,
+        });
+      }
+      lastOutcome = { outcome, intention: intention || '', label: site ? site.label : pattern, at: clock };
+      gate = null;
+
+      if (outcome === 'close') {
+        log(`${site ? site.label : pattern}: walked away — visit recorded, nothing opened`, 'ok');
+        emit();
+        return lastOutcome;
+      }
+
+      log(`${site ? site.label : pattern}: intention recorded — "${intention || 'no words, just a choice'}"`, 'ok');
+      const d = Engine.evaluateNavigation(state, simCfg, pattern, tabId, clock, { skipIntervention: true });
+      if (d.action === 'allow' || d.action === 'grace') {
+        log(`opened ${site.label} — ${d.resumed ? 'same visit resumes' : 'grace window starts (' + site.graceSeconds + 's)'}`, 'ok');
+      } else if (d.action === 'block') {
+        log(`BLOCKED ${site.label} — ${d.reason}`, 'bad');
+      }
+      emit();
+      return lastOutcome;
     }
 
     function blur(pattern) {
@@ -103,6 +149,9 @@
           const d = Engine.heartbeat(state, simCfg, site.pattern, tabId, clock, focused);
           if (d.action === 'close') {
             log(`FOCUS CAP on ${site.label} → tab closed, locked ${Math.round((d.cooldownSeconds || 0) / 60)}m`, 'bad');
+          } else if (d.action === 'intervene') {
+            gate = { site: site.pattern, label: site.label, mode: 'again', type: simCfg.intervention.type };
+            log(`FRICTION again on ${site.label} — ${Math.round(simCfg.intervention.reinterveneSeconds / 60)}m of scrolling is enough`, 'warn');
           }
         }
         Engine.expirePause(state, clock);
@@ -125,7 +174,7 @@
       emit();
     }
 
-    return { subscribe, open, blur, close, tick, pause, reset, setSite, snapshot, log };
+    return { subscribe, open, blur, close, tick, pause, reset, setSite, finishGate, snapshot, log };
   }
 
   root.FFSimulator = { createSimulator };

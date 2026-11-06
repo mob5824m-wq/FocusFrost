@@ -263,7 +263,7 @@
         onInstalled: evt('runtime:onInstalled'),
         onStartup: evt('runtime:onStartup'),
         onSuspend: evt('runtime:onSuspend'),
-        sendMessage(message) {
+        sendMessage(message, senderTabId) {
           // Pages usually boot before the worker finishes reading storage, so
           // queue the message until the worker is actually listening.
           return new Promise((resolve) => {
@@ -273,9 +273,13 @@
                 return setTimeout(() => deliver(attempt + 1), 25);
               }
               let settled = false;
+              const sender = { id: EXT_ID, url: (document.baseURI || 'http://localhost/') };
+              // Real Chrome always tells the worker which tab a message came
+              // from; the product relies on it (the intervention pass).
+              if (senderTabId != null) sender.tab = { id: senderTabId, windowId };
               evt('runtime:onMessage')._fire(
                 message,
-                { id: EXT_ID, url: (document.baseURI || 'http://localhost/') },
+                sender,
                 (value) => {
                   if (settled) return;
                   settled = true;
@@ -311,6 +315,11 @@
           const t = tabs.get(tabId);
           return t ? promiseOf({ ...t }) : Promise.reject(new Error('No tab with id: ' + tabId));
         },
+        getCurrent: async () => {
+          const id = window.__FF_TAB_ID || null;
+          const t = id != null ? tabs.get(id) : null;
+          return t ? { ...t } : null;
+        },
         create: (props) => {
           const id = openTab(props && props.url);
           return promiseOf({ ...tabs.get(id) });
@@ -321,7 +330,7 @@
           if (props && props.url) {
             const url = props.url;
             pushLog(`worker: tabs.update(#${tabId}) → ${shortUrl(url)}`);
-            // Blocking = the tab is redirected to the extension's page. Show it.
+            // Blocking / gating = the tab is redirected to an extension page.
             evt('demo:view')._fire(tabId, url);
             tab.url = url;
             tab.title = url;
@@ -517,6 +526,15 @@
       tabs: {
         query: () => bridge.tabsQuery(),
         get: (id) => bridge.tabsGet(id),
+        getCurrent: async () => {
+          const id = window.__FF_TAB_ID || null;
+          if (id == null) return null;
+          try {
+            return await bridge.tabsGet(id);
+          } catch (_) {
+            return null;
+          }
+        },
         update: (id, props) => bridge.tabsUpdate(id, props),
         remove: (id) => bridge.tabsRemove(id),
         create: (props) => bridge.tabsCreate(props),
@@ -592,7 +610,7 @@
       async sendMessage(message) {
         const api = await sandboxApi();
         if (!api) return { ok: false, error: 'sandbox not connected' };
-        return api.sendMessage(message);
+        return api.sendMessage(message, window.__FF_TAB_ID || null);
       },
       connect(name, tabId) {
         const silent = { name, postMessage() {}, onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, disconnect() {} };
@@ -641,5 +659,14 @@
       },
     };
     window.chrome = proxiedChrome(bridge);
+
+    // Product pages use this to hand navigation back to the fake browser.
+    try {
+      const p = new URLSearchParams(location.search);
+      const tabId = Number(p.get('tab')) || null;
+      if (tabId != null) window.__FF_TAB_ID = tabId;
+    } catch (_) {
+      /* no query string, nothing to do */
+    }
   }
 })();

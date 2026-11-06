@@ -1,20 +1,45 @@
 # FocusFrost
 
-**A customizable cooldown for distracting websites — with a grace window, a hard focus cap, and a pause button you have to really mean.**
+**Friction before, consequences after.** A customizable cooldown for distracting websites — with an intervention screen you have to sit through, a grace window, a hard focus cap, focus hours, and a pause button you have to really mean.
 
-FocusFrost is a Chrome extension (Manifest V3) that turns "just checking YouTube" into a deliberate decision. You get one tab, one visit, and one clock. Leaving ends the visit and starts a lockout. And because life happens, there is one escape hatch: a *pause productivity extensions* button you must press and hold for six seconds, after choosing a short, limited window.
+FocusFrost is a Chrome extension (Manifest V3) that turns "just checking YouTube" into a deliberate decision. It combines two ideas that work better together:
+
+- **Friction before entry** ([one-sec](https://one-sec.app/)-style): before a tracked site loads, you get a full intervention screen — a breath, 4-7-8 breathing, a couple of honest questions, a phrase to retype, or a line stating what you came for.
+- **Consequences after** (FocusFrost-style): once you are through, you get one visit, one clock and one hard cooldown. Leave, switch tabs or hit the cap and the site is shut until the timer runs out.
+
+One-sec's own research is the reason for the pairing: a pause in front of the app cuts openings by about half, but a "continue anyway" button with no cost behind it is a reminder, not a barrier. And the friction wears off within a couple of weeks. So FocusFrost randomises the intervention, adds a second look after N minutes of scrolling, and keeps the cooldown as the thing that actually costs you.
 
 ```
- open site ──▶ grace window ──▶ focused visit ──▶ leave/close/switch away
-                    │                  │                  │
-              leave = free      hit the cap = close   cooldown starts
-                                                              │
-                                    hold 6s to pause ◀── need it for real?
+          ┌── breathe · reflect · type a phrase · state your intention ──┐
+          ▼                                                              │
+ open site ──▶ INTERVENTION ──▶ grace window ──▶ focused visit ──▶ leave/close/switch away
+                    │                  │                │                   │
+              close = counted    leave = free    hit the cap = close   cooldown starts
+                                                                             │
+                                                hold 6s to pause ◀── need it for real?
 ```
 
 ---
 
 ## The rules, exactly
+
+### The intervention screen (on by default)
+
+A tracked URL never loads straight away. The tab is redirected to a full-page gate that is part of the extension, not a popup:
+
+| Intervention | What it asks you to do |
+| --- | --- |
+| **Deep breath** | Follow a paced breath for at least a configurable 3–60 seconds. |
+| **4-7-8 breathing** | In for 4, hold for 7, out for 8 — repeated. Slower, and harder to rush. |
+| **Reflect** | Three quick questions — why you are here, whether you need it or want it, how long you plan to stay — then a line of your own words. |
+| **Type a phrase** | Retype a randomly chosen sentence — the friction one-sec uses to make the pause unavoidable. |
+| **State your intention** | One line: what you came for. It is logged, and that log is the most interesting page in the settings. |
+
+Underneath every intervention is an **"or do this instead"** line you write yourself (defaults to something better than scrolling), and the **close the tab** button is the visually primary choice. Continuing is possible — that is the point; the friction should be honest, not a maze.
+
+### The doomscroll brake
+
+Optionally, the gate comes back **mid-visit** after N seconds of focused scrolling (off by default; set it in the Friction section in 30-second steps). Finish it and you stay; close it and the visit ends and the cooldown starts. This is the part a single-entry pause cannot do.
 
 ### Grace window (default 20s)
 
@@ -42,6 +67,10 @@ Try any of them inside the cooldown and you land on the FocusFrost cooling-down 
 
 Switching tabs, alt-tabbing to another app, or closing the tab after grace **immediately closes the tracked tab**. A content script reports focus loss about once a second, and the service worker independently watches `tabs.onActivated` / `windows.onFocusChanged`, so a backgrounded page cannot sneak by.
 
+### Focus hours (hard blocks, independent of cooldowns)
+
+Windows you define per weekday — *Deep work, 09:00–12:00, Mon–Fri* — block every tracked site outright, with no grace window and no intervention. Windows may cross midnight (23:00–06:00 works), and they are checked on navigation *and* against visits that are already running, so starting work does not require closing anything yourself. A pause can override focus hours, but only if you allow it per window.
+
 ### Pause productivity extensions (hold to confirm)
 
 When you genuinely need the site — a tutorial, a link from a colleague, an actual task — the pause is there, deliberately inconvenient:
@@ -67,9 +96,9 @@ Starting a pause also ends any live lockout — that is the price: your cooldown
 1. Download or clone this repo.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select the `extension/` folder.
-4. The settings page opens on first install. Add the sites that eat your day.
+4. The settings page opens on first install. Add the sites that eat your day, then pick the intervention you want between you and them.
 
-Works on Chrome 110+ and any Chromium browser with MV3 (`edge://extensions`, `brave://extensions`, …).
+Works on Chrome 110+ and any Chromium browser with MV3 (`edge://extensions`, `brave://extensions`, …). The settings page also works as a plain web page in any modern browser when served by the sandbox below.
 
 ## Try it without installing
 
@@ -79,7 +108,7 @@ A live sandbox runs the **real** `background.js`, the real engine and the real p
 node demo/server.js          # http://localhost:4173
 ```
 
-Inside the sandbox you get a fake browser with tabs you can open, leave, return to and close, a time-travel control (so you never wait ten real minutes for a cooldown), a live view of the service worker's state, and the actual toolbar popup embedded alongside. See [`demo/README.md`](demo/README.md).
+Inside the sandbox you get a fake browser with tabs you can open, leave, return to and close, the **real intervention gate and blocked page** rendered in the viewport, a time-travel control (so you never wait ten real minutes for a cooldown), a live view of the service worker's state, the actual toolbar popup embedded alongside, and a *Settings page →* link to the real settings app. See [`demo/README.md`](demo/README.md).
 
 ---
 
@@ -90,8 +119,26 @@ Inside the sandbox you get a fake browser with tabs you can open, leave, return 
 | **Popup** (toolbar) | Live state — grace, focus countdown, cooldown, pause — plus the hold-to-pause button and per-site status. |
 | **On-page chip** | A small frosty pill bottom-right with the current clock. Click to collapse it to a dot. |
 | **Blocked page** | The cooling-down wall, with a live countdown and the pause panel. |
-| **Options** | Add/remove sites, tune cooldown / grace / cap per site, set pause policy, maintenance. |
+| **Settings (full page)** | The dedicated settings web app — see below. |
 | **Dashboard** | Today's metrics, per-site focus time, live engine state, and a rules sandbox. |
+
+### The settings page
+
+Settings are not crammed into the popup. The popup shows state and links out; **Settings** opens its own full-page app (`extension/options/options.html`) with a sidebar and nine sections:
+
+| Section | What lives there |
+| --- | --- |
+| **Overview** | The three layers of the design, live, with today's numbers. |
+| **Sites** | Which domains are tracked, with per-site cooldown / grace / cap. |
+| **Friction** | Intervention type, duration, "do this instead", required intention, the doomscroll brake. |
+| **Guardrails** | Close on blur, one tab only, the on-page chip, notifications. |
+| **Focus hours** | Weekday windows that block outright. |
+| **Pause** | Hold duration, allowed lengths, pauses per day, minimum gap. |
+| **Intentions** | The log: what you said you came for, and what you walked away from. |
+| **Pages** | Previews of the intervention screen, blocked page and on-page chip. |
+| **Advanced** | Export / import JSON, presets (gentle / strict / lockdown), factory reset. |
+
+Everything autosaves 260 ms after you stop typing or dragging — there is no Save button to forget — and the sidebar status is live, so you can watch it change.
 
 ### Settings that matter
 
@@ -101,6 +148,8 @@ Inside the sandbox you get a fake browser with tabs you can open, leave, return 
 - **Close on blur / one tab only** — the two enforcement behaviours. Both on by default.
 - **Hold duration** — 3–10 seconds.
 - **Pauses per day / minimum gap** — set `0` per day to disable pausing entirely.
+- **Intervention type and length** — including turning the gate off entirely for a pure-cooldown setup.
+- **Re-intervention** — how many minutes of focused scrolling earn a second look.
 
 Everything is clamped on the way in, so a hand-edited or synced settings blob can never turn a 10-minute cooldown into a 10-day one.
 
@@ -117,26 +166,28 @@ extension/
     util.js              durations, day keys, domain normalisation
     config.js            settings schema, defaults, clamping
     engine.js            ← the whole policy, pure and testable
+  intervention/          the full-page gate: breathe, reflect, type, intend
   popup/                 live state + hold-to-pause
-  options/               site manager and policy
+  options/               the dedicated settings app (app-core/sections/app + CSS)
   blocked/               the cooling-down page
-  dashboard/             metrics + rules sandbox
+  dashboard/             metrics + rules sandbox, including the gate
 demo/                    the fake-browser harness (not shipped)
 tests/                   engine + worker tests
 ```
 
-The design rule: **`engine.js` never touches a `chrome.*` API.** It takes a state object and a settings object and returns a decision (`allow`, `block`, `close`). That means the whole ruleset — grace, caps, cooldowns, pause rationing, day rollover — is unit tested, and the service worker is only plumbing: read state, call the engine, apply the result.
+The design rule: **`engine.js` never touches a `chrome.*` API.** It takes a state object and a settings object and returns a decision (`allow`, `intervene`, `block`, `close`). That means the whole ruleset — interventions, focus hours, grace, caps, cooldowns, pause rationing, day rollover — is unit tested, and the service worker is only plumbing: read state, call the engine, apply the result.
 
 State lives in `chrome.storage.local`; settings are mirrored to `chrome.storage.sync`. Nothing leaves your browser: no accounts, no analytics, no network requests (the only external fetches are favicons on your own settings page).
 
 ### Tests
 
 ```bash
-node --test tests/*.test.js      # 29 tests, no dependencies
+node --test tests/*.test.js      # 54 tests, no dependencies
 ```
 
 - `tests/engine.test.js` — the policy in isolation: grace edge cases, cap enforcement, cooldown arithmetic, pause rationing, clamping, corrupt-state repair.
-- `tests/worker.test.js` — the **real** `background.js` booted in a VM against a fake `chrome` API: navigations, second tabs, tab closes, window focus loss, content-script ports, settings round-trips.
+- `tests/intervention.test.js` — the gate: intervention vs. cooldown precedence, intentions and walk-aways, the log cap, the doomscroll brake, focus hours (including overnight windows, day lists and pauses), config clamping.
+- `tests/worker.test.js` — the **real** `background.js` booted in a VM against a fake `chrome` API: navigations, second tabs, tab closes, window focus loss, content-script ports, settings round-trips, and the gate end to end (one pass per tab, no redirect loop, walk-aways, focus hours).
 
 ### Permissions, and why
 
@@ -148,6 +199,8 @@ node --test tests/*.test.js      # 29 tests, no dependencies
 | `alarms` | keep the pause clock and cooldowns ticking while the worker sleeps |
 | `notifications` | tell you why the tab closed |
 | `http://*/*`, `https://*/*` | the content script has to run on the sites you choose to track |
+
+No camera, microphone or history permission: the "mirror" style interventions some apps use are deliberately not implemented — everything here happens on one page, with text.
 
 FocusFrost does not read page content. The content script reports one thing per second — "is this tab visible and focused" — plus the hostname.
 

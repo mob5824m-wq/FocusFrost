@@ -285,6 +285,8 @@ const SETTINGS = {
   defaults: { cooldownSeconds: 600, graceSeconds: 20, maxSessionSeconds: 300 },
   pause: { holdMs: 6000, presets: [5, 15, 30], maxPerDay: 2, minGapMinutes: 30, strict: true },
   behavior: { closeOnBlur: true, blockNewTabs: true, showChip: true, notifyOnEnd: true },
+  // Most tests drive the cooldown half of the product directly.
+  intervention: { enabled: false },
 };
 
 test('worker boots, exposes status, and answers the popup', async (t) => {
@@ -545,4 +547,154 @@ test('corrupt storage does not crash the worker', async (t) => {
   assert.equal(status.ok, true);
   assert.ok(Array.isArray(status.sites));
   assert.ok(status.sites.length > 0, 'falls back to defaults');
+});
+
+/* ================================================================== */
+/* the intervention gate, end to end                                   */
+/* ================================================================== */
+
+const GATED = Object.assign({}, SETTINGS, {
+  intervention: { enabled: true, type: 'breath', durationSeconds: 10, showAlternative: true, alternative: 'go outside' },
+});
+
+test('an ungated visit is sent to the intervention page first', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({ ff_settings: GATED });
+  const tab = w.addTab('https://youtube.com/watch?v=abc');
+  w.navigate(tab.id, 'https://youtube.com/watch?v=abc');
+  await w.flush();
+
+  assert.equal(w.redirects.length, 1, 'one redirect to the gate');
+  const url = w.redirects[0].url;
+  assert.match(url, /intervention\/intervention\.html\?/);
+  assert.match(url, /site=youtube\.com/);
+  assert.match(url, /target=https%3A%2F%2Fyoutube\.com%2Fwatch%3Fv%3Dabc/);
+
+  // No visit has started yet.
+  const status = await w.send({ type: 'status' });
+  assert.equal(status.totals.active, 0);
+});
+
+test('the gate gets its config, and clearing it grants exactly one pass', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({ ff_settings: GATED });
+  const tab = w.addTab('https://youtube.com/');
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+  w.redirects.length = 0;
+
+  // The gate page asks what it should render.
+  const config = await w.send({ type: 'interventionConfig', url: 'https://youtube.com/' });
+  assert.equal(config.ok, true);
+  assert.equal(config.intervention.type, 'breath');
+  assert.equal(config.label, 'YouTube');
+  assert.ok(config.pause, 'the pause gate travels with it');
+
+  // It finishes: the worker grants a pass to the sender tab.
+  const done = await new Promise((resolve) => {
+    w.e.onMessage.fire({ type: 'interventionDone', outcome: 'continue', site: 'youtube.com', intention: 'a tutorial' },
+      { id: 'ff', tab: { id: tab.id } }, resolve);
+  });
+  assert.equal(done.ok, true);
+
+  // The follow-up navigation goes straight through: the gate ran once.
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 0, 'no second gate, no loop');
+  const status = await w.send({ type: 'status' });
+  assert.equal(status.totals.active, 1, 'the visit started');
+});
+
+test('walking away records the intervention and starts no visit', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({ ff_settings: GATED });
+  const tab = w.addTab('https://youtube.com/');
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+
+  await new Promise((resolve) => {
+    w.e.onMessage.fire({ type: 'interventionDone', outcome: 'close', site: 'youtube.com' },
+      { id: 'ff', tab: { id: tab.id } }, resolve);
+  });
+  await w.flush();
+
+  const status = await w.send({ type: 'status' });
+  assert.equal(status.stats.interventions, 1);
+  assert.equal(status.stats.turnedAway, 1);
+  assert.equal(status.totals.active, 0);
+});
+
+test('the pass does not leak to a different tab', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({ ff_settings: GATED });
+  const first = w.addTab('https://youtube.com/');
+  w.navigate(first.id, 'https://youtube.com/');
+  await w.flush();
+  await new Promise((resolve) => {
+    w.e.onMessage.fire({ type: 'interventionDone', outcome: 'continue', site: 'youtube.com' },
+      { id: 'ff', tab: { id: first.id } }, resolve);
+  });
+
+  const second = w.addTab('https://youtube.com/other');
+  w.navigate(second.id, 'https://youtube.com/other');
+  await w.flush();
+
+  const gateUrls = w.redirects.filter((r) => r.url.includes('intervention'));
+  assert.equal(gateUrls.length, 2, 'the second tab had to earn its own pass');
+});
+
+test('a cooldown still beats the gate', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const w = await bootWorker({ ff_settings: Object.assign({}, GATED, { intervention: { enabled: false } }) });
+  const tab = w.addTab('https://youtube.com/');
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+  t.mock.timers.tick(60000);
+  w.tabs.delete(tab.id);
+  w.e.onRemoved.fire(tab.id, {});
+  await w.flush();
+  w.redirects.length = 0;
+
+  const back = w.addTab('https://youtube.com/');
+  w.navigate(back.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 1);
+  assert.match(w.redirects[0].url, /blocked\/blocked\.html/);
+});
+
+test('focus hours are served by the blocked page, pausable on request', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: BASE });
+  const settings = Object.assign({}, SETTINGS, {
+    intervention: { enabled: false },
+    schedule: {
+      enabled: true,
+      pausable: false,
+      blocks: [{ id: 'b1', label: 'Deep work', days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59', enabled: true }],
+    },
+  });
+  const w = await bootWorker({ ff_settings: settings });
+  const tab = w.addTab('https://youtube.com/');
+  w.navigate(tab.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 1);
+  assert.match(w.redirects[0].url, /reason=schedule/);
+
+  // A pause cannot override it while `pausable` is false.
+  await w.send({ type: 'startPause', minutes: 5 });
+  w.redirects.length = 0;
+  const tab2 = w.addTab('https://youtube.com/');
+  w.navigate(tab2.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 1, 'still blocked during a pause');
+
+  // Flip it and a pause gets through.
+  await w.send({
+    type: 'saveSettings',
+    settings: Object.assign({}, settings, { schedule: Object.assign({}, settings.schedule, { pausable: true }) }),
+  });
+  w.redirects.length = 0;
+  const tab3 = w.addTab('https://youtube.com/');
+  w.navigate(tab3.id, 'https://youtube.com/');
+  await w.flush();
+  assert.equal(w.redirects.length, 0, 'the pause punched through');
 });

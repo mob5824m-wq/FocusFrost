@@ -1,11 +1,20 @@
 {
   "manifest_version": 3,
   "name": "FocusFrost",
-  "version": "1.0.0",
-  "description": "A customizable cooldown for distracting sites. One tab, one task, one clock — with a deliberate, time-boxed pause for when you actually need it.",
+  "version": "1.1.0",
+  "description": "A cooldown for distracting sites, plus a one-breath pause on the way in. One tab, one task, one clock \u2014 with a deliberate, time-boxed pause for when you actually need it.",
   "minimum_chrome_version": "110",
-  "permissions": ["storage", "tabs", "alarms", "notifications", "webNavigation"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "alarms",
+    "notifications",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -28,16 +37,28 @@
   "options_page": "options/options.html",
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["blocked/blocked.html", "icons/*", "assets/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "blocked/blocked.html",
+        "intervention/intervention.html",
+        "icons/*",
+        "assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "content_security_policy": {

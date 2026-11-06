@@ -26,6 +26,8 @@ function setup(overrides) {
           },
         ],
         pause: { holdMs: 6000, presets: [5, 15, 30], maxPerDay: 2, minGapMinutes: 30, strict: true },
+        // The intervention gate has its own tests; keep it out of the way here.
+        intervention: { enabled: false },
       },
       overrides || {}
     )

@@ -28,6 +28,7 @@
     statFocus: $('statFocus'),
     statBlocked: $('statBlocked'),
     dashboard: $('dashboard'),
+    statTurnedAway: $('statTurnedAway'),
     toast: $('toast'),
   };
 
@@ -146,6 +147,7 @@
 
     el.statFocus.textContent = Util.humanDuration(status.stats.focusSeconds);
     el.statBlocked.textContent = String(status.stats.blocked);
+    if (el.statTurnedAway) el.statTurnedAway.textContent = String(status.stats.turnedAway || 0);
 
     if (pause.active) {
       el.resumeBtn.classList.remove('hidden');
@@ -419,8 +421,13 @@
     render();
   });
 
-  el.settings.addEventListener('click', () => send({ type: 'openOptions' }));
-  el.editSites.addEventListener('click', () => send({ type: 'openOptions' }));
+  // Settings are a full page of their own; the popup only links to them.
+  const openSettings = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') });
+    window.close();
+  };
+  el.settings.addEventListener('click', openSettings);
+  el.editSites.addEventListener('click', openSettings);
   el.dashboard.addEventListener('click', () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
     window.close();

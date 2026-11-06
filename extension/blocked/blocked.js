@@ -6,6 +6,17 @@
   const CIRC = 603.2;
   const $ = (id) => document.getElementById(id);
 
+  /**
+   * Navigate, with one escape hatch: inside the offline sandbox there is no
+   * real internet, so the fake browser handles the jump instead.
+   */
+  function goTo(url, tabId) {
+    if (window.__FF_DEMO && window.parent && window.parent.__FF_DEMO_NAV__) {
+      return window.parent.__FF_DEMO_NAV__(tabId == null ? null : tabId, url);
+    }
+    location.replace(url);
+  }
+
   const params = new URLSearchParams(location.search);
   const site = params.get('site') || 'this site';
   const reason = params.get('reason') || 'cooldown';
@@ -151,7 +162,7 @@
     el.back.classList.add('hidden');
     el.pause.classList.add('hidden');
     setTimeout(() => {
-      location.replace(`https://${(match && match.pattern) || site}`);
+      goTo(`https://${(match && match.pattern) || site}`);
     }, 900);
   }
 

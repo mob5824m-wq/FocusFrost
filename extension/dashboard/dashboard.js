@@ -76,6 +76,10 @@
     $('mPausesSub').textContent = status.pause.active
       ? `active: ${Util.clock(status.pause.remaining / 1000)} left`
       : `${status.pause.remainingToday} left today`;
+    const interventions = status.stats.interventions || 0;
+    const turnedAway = status.stats.turnedAway || 0;
+    $('mInterventions').textContent = String(interventions);
+    $('mInterventionsSub').textContent = turnedAway === 1 ? '1 walked away' : `${turnedAway} walked away`;
 
     renderBars();
     renderTable();
@@ -156,6 +160,8 @@
         graceSeconds: s.graceSeconds,
         maxSessionSeconds: s.maxSessionSeconds,
       })),
+      intervention: res.intervention,
+      schedule: res.schedule,
       pause: res.pause,
       behavior: res.behavior,
     });
@@ -177,6 +183,21 @@
       option.textContent = `${minutes} min`;
       minutesSelect.appendChild(option);
     }
+
+    // The gate is played by the person using the sandbox.
+    document.querySelectorAll('[data-gate]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const intention = $('simIntention').value.trim();
+        const outcome = btn.dataset.gate === 'close' ? 'close' : 'continue';
+        if (outcome === 'continue' && !intention) {
+          $('simIntention').focus();
+          toast('Say what you came for first');
+          return;
+        }
+        sim.finishGate(outcome, intention);
+        $('simIntention').value = '';
+      });
+    });
 
     document.querySelectorAll('[data-sim]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -209,6 +230,24 @@
       } else if (cooling.length) {
         clockText = Util.clock(cooling[0].cooldownRemaining / 1000);
         text = `${cooling[0].label}: cooling down`;
+      }
+
+      if (snap.gate) {
+        clockText = '—';
+        text = `${snap.gate.label}: at the gate`;
+      }
+
+      const gateEl = $('simGate');
+      if (snap.gate) {
+        gateEl.classList.remove('hidden');
+        $('simGateBadge').textContent = snap.gate.mode === 'again' ? 'again' : 'intervention';
+        $('simGateTitle').textContent = snap.gate.label;
+        $('simGateBody').textContent =
+          snap.gate.mode === 'again'
+            ? 'You have been scrolling a while. Same gate — same rules.'
+            : `Intervention type: ${snap.gate.type}. In the real extension this is the full-screen page.`;
+      } else {
+        gateEl.classList.add('hidden');
       }
 
       $('simClock').textContent = clockText;

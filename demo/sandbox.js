@@ -54,7 +54,7 @@
   /* ------------------------------------------------------------------ */
 
   window.__FF_SANDBOX__ = {
-    sendMessage: (message) => chromeMock.runtime.sendMessage(message),
+    sendMessage: (message, tabId) => chromeMock.runtime.sendMessage(message, tabId),
 
     /** A page asked to open a long-lived port (content scripts do this). */
     connect(name, tabId) {
@@ -96,7 +96,7 @@
     // `tabId` identifies which simulated tab this chrome.* belongs to.
     const bridge = {
       connect: (name) => connectTabFrame(tabId),
-      sendMessage: (message) => chromeMock.runtime.sendMessage(message),
+      sendMessage: (message, tabId) => chromeMock.runtime.sendMessage(message, tabId),
     };
     return {
       runtime: {
@@ -174,15 +174,18 @@
     }
     const url = tab.url || '';
 
-    if (url.includes('blocked/blocked.html')) {
+    if (url.includes('blocked/blocked.html') || url.includes('intervention/intervention.html')) {
+      const isGate = url.includes('intervention/intervention.html');
       const path = url.replace('chrome-extension://focusfrost-demo/', '');
       view.innerHTML = '';
       const frame = document.createElement('iframe');
-      frame.dataset.kind = 'blocked';
+      frame.dataset.kind = isGate ? 'gate' : 'blocked';
       frame.dataset.tab = String(tab.id);
       frame.src = `/extension/${path}`;
       view.appendChild(frame);
-      noteEl.textContent = 'The real blocked page. Try the hold-to-pause button below, or wait out the clock.';
+      noteEl.textContent = isGate
+        ? 'The real intervention screen. Breathe, reflect or type your way through — then decide.'
+        : 'The real blocked page. Try the hold-to-pause button, or wait out the clock.';
       noteEl.classList.remove('hidden');
       return;
     }
@@ -379,10 +382,33 @@
 
     // The worker redirects tabs by calling chrome.tabs.update; let the UI follow.
     demo.onView((tabId, url) => {
-      if (url.includes('blocked/blocked.html')) {
+      if (url.includes('intervention/intervention.html')) {
+        note(`worker redirected tab #${tabId} → the intervention gate`, 'warn');
+      } else if (url.includes('blocked/blocked.html')) {
         note(`worker redirected tab #${tabId} → cooling-down page`, 'bad');
       }
       renderTabs();
+    });
+
+    // Pages inside the fake browser hand their navigation back to the sandbox.
+    window.__FF_DEMO_NAV__ = (tabId, url) => {
+      const id = tabId == null ? activeTabId : tabId;
+      if (id == null) return;
+      note(`tab #${id} navigates to ${url}`, 'ok');
+      demo.navigateTab(id, url);
+      renderTabs();
+    };
+
+    // Expose the tab id to extension pages opened as tabs (preview links).
+    demo.onTabs((tabs) => {
+      for (const frame of document.querySelectorAll('iframe')) {
+        try {
+          const id = Number(new URLSearchParams(frame.contentWindow.location.search).get('tab'));
+          if (id) frame.contentWindow.__FF_TAB_ID = id;
+        } catch (_) {
+          /* not one of ours */
+        }
+      }
     });
 
     demo.onLog((entry) => note(entry.text, entry.text.startsWith('notification') ? 'ok' : ''));
@@ -422,7 +448,18 @@
           { id: 'site_rd', pattern: 'reddit.com', label: 'Reddit', enabled: true, cooldownSeconds: 600, graceSeconds: 20, maxSessionSeconds: 300 },
         ],
         defaults: { cooldownSeconds: 600, graceSeconds: 20, maxSessionSeconds: 300 },
-        pause: { holdMs: 6000, presets: [5, 15, 30], maxPerDay: 2, minGapMinutes: 30, strict: true },
+        intervention: {
+          enabled: true,
+          type: 'breath',
+          durationSeconds: 4,
+          requireIntention: false,
+          showAlternative: true,
+          alternative: 'Put the kettle on and come back in ten minutes. If you still want it then, it will still be here.',
+          allowSkip: false,
+          reinterveneSeconds: 0,
+        },
+        pause: { holdMs: 3000, presets: [5, 15, 30], maxPerDay: 2, minGapMinutes: 30, strict: true },
+        schedule: { enabled: false, pausable: false, blocks: [] },
         behavior: { closeOnBlur: true, blockNewTabs: true, showChip: true, notifyOnEnd: true },
       };
       // Re-run boot with the seeded settings by asking the worker to reload.

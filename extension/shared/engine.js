@@ -5,18 +5,28 @@
  * decision. No chrome.* APIs in here, which means the whole ruleset can be
  * unit tested in Node (see tests/engine.test.js).
  *
+ * Two layers of friction, combined:
+ *
+ *   1. INTERVENTION (the one sec idea, before the visit)
+ *      On the way in you meet a short pause: a breath, a reflection, a typed
+ *      phrase. It catches the muscle memory at the exact moment of the reach.
+ *
+ *   2. CONSEQUENCE (the FocusFrost idea, during and after the visit)
+ *      Grace window, focused cap, one tab, then a hard cooldown you cannot
+ *      reload your way out of.
+ *
  * Vocabulary
  * ----------
  * session   One continuous "visit" to a tracked site. It ends when you leave
  *           after the grace window, when you hit the focus cap, or when the
  *           tab closes.
- * grace     Seconds after a visit begins during which leaving is free. Come
- *           back inside the window and nothing happens; come back after it and
- *           you are locked out for the site's cooldown.
+ * grace     Seconds after a visit begins during which leaving is free.
  * cooldown  The lockout. A hard timestamp (`cooldownUntil`) that survives
  *           browser restarts.
  * pause     The deliberate "I actually need this" override. Time-boxed and
  *           rate limited.
+ * block     A scheduled window (e.g. 09:00-17:00 Mon-Fri) where the site is
+ *           simply not available.
  */
 (function (root, factory) {
   const api = factory(
@@ -33,6 +43,9 @@
     DISABLED: 'disabled',
     PAUSED: 'paused',
     COOLDOWN: 'cooldown',
+    SCHEDULE: 'schedule',
+    INTERVENE: 'intervene',
+    REINTERVENE: 'reintervene',
     SESSION_ACTIVE: 'session-active',
     SECOND_TAB: 'second-tab',
     LIMIT: 'limit',
@@ -48,7 +61,11 @@
     [REASONS.LEFT]: 'You left the site',
     [REASONS.LIMIT]: 'Focus session finished',
     [REASONS.MANUAL]: 'Ended by you',
+    [REASONS.SCHEDULE]: 'Outside your focus hours',
   };
+
+  const INTENTION_MAX = 160;
+  const LOG_MAX = 60;
 
   function blankSite(now) {
     return {
@@ -68,7 +85,7 @@
   function emptyState(now) {
     const t = Number(now) || Date.now();
     return {
-      version: 1,
+      version: 2,
       sites: {},
       pause: {
         until: 0,
@@ -79,7 +96,17 @@
         lastPauseAt: 0,
         total: 0,
       },
-      stats: { day: Util.dayKey(t), blocked: 0, sessions: 0, focusSeconds: 0 },
+      stats: {
+        day: Util.dayKey(t),
+        blocked: 0,
+        sessions: 0,
+        focusSeconds: 0,
+        interventions: 0,
+        turnedAway: 0, // interventions that ended with "close the tab"
+        intentions: 0,
+      },
+      /** Most recent first. Deliberately tiny: a mirror, not surveillance. */
+      log: [],
     };
   }
 
@@ -88,20 +115,35 @@
     const fresh = emptyState(now);
     if (!raw || typeof raw !== 'object') return fresh;
     const state = {
-      version: 1,
+      version: 2,
       sites: {},
       pause: Object.assign(fresh.pause, raw.pause || {}),
       stats: Object.assign(fresh.stats, raw.stats || {}),
+      log: [],
     };
-    state.pause.until = Math.max(0, Number(state.pause.until) || 0);
-    state.pause.startedAt = Math.max(0, Number(state.pause.startedAt) || 0);
-    state.pause.minutes = Math.max(0, Number(state.pause.minutes) || 0);
-    state.pause.usedToday = Math.max(0, Number(state.pause.usedToday) || 0);
-    state.pause.lastPauseAt = Math.max(0, Number(state.pause.lastPauseAt) || 0);
-    state.pause.total = Math.max(0, Number(state.pause.total) || 0);
-    state.stats.blocked = Math.max(0, Number(state.stats.blocked) || 0);
-    state.stats.sessions = Math.max(0, Number(state.stats.sessions) || 0);
-    state.stats.focusSeconds = Math.max(0, Number(state.stats.focusSeconds) || 0);
+    const nonNeg = (v, fb) => Math.max(0, Number(v) || fb || 0);
+    state.pause.until = nonNeg(state.pause.until);
+    state.pause.startedAt = nonNeg(state.pause.startedAt);
+    state.pause.minutes = nonNeg(state.pause.minutes);
+    state.pause.usedToday = nonNeg(state.pause.usedToday);
+    state.pause.lastPauseAt = nonNeg(state.pause.lastPauseAt);
+    state.pause.total = nonNeg(state.pause.total);
+    for (const key of Object.keys(fresh.stats)) {
+      state.stats[key] = nonNeg(state.stats[key]);
+    }
+
+    if (Array.isArray(raw.log)) {
+      state.log = raw.log
+        .filter((e) => e && typeof e === 'object' && Number(e.at) > 0)
+        .slice(0, LOG_MAX)
+        .map((e) => ({
+          at: Number(e.at) || 0,
+          kind: String(e.kind || 'event').slice(0, 24),
+          site: e.site ? Util.normalizeSite(e.site) : '',
+          text: String(e.text || '').slice(0, INTENTION_MAX),
+          seconds: Math.max(0, Number(e.seconds) || 0),
+        }));
+    }
 
     const sites = raw.sites && typeof raw.sites === 'object' ? raw.sites : {};
     for (const key of Object.keys(sites)) {
@@ -109,14 +151,14 @@
       if (!pattern) continue;
       const src = sites[key] || {};
       const site = blankSite(now);
-      site.cooldownUntil = Math.max(0, Number(src.cooldownUntil) || 0);
+      site.cooldownUntil = nonNeg(src.cooldownUntil);
       site.cooldownReason = src.cooldownReason || null;
-      site.lastLeaveAt = Math.max(0, Number(src.lastLeaveAt) || 0);
-      site.focusSeconds = Math.max(0, Number(src.focusSeconds) || 0);
-      site.bestFocusSeconds = Math.max(0, Number(src.bestFocusSeconds) || 0);
-      site.trips = Math.max(0, Number(src.trips) || 0);
-      site.blocked = Math.max(0, Number(src.blocked) || 0);
-      site.lastVisitAt = Math.max(0, Number(src.lastVisitAt) || 0);
+      site.lastLeaveAt = nonNeg(src.lastLeaveAt);
+      site.focusSeconds = nonNeg(src.focusSeconds);
+      site.bestFocusSeconds = nonNeg(src.bestFocusSeconds);
+      site.trips = nonNeg(src.trips);
+      site.blocked = nonNeg(src.blocked);
+      site.lastVisitAt = nonNeg(src.lastVisitAt);
       site.day = src.day || Util.dayKey(now);
       if (src.session && typeof src.session === 'object') {
         site.session = {
@@ -124,9 +166,10 @@
           windowId: Number(src.session.windowId) || -1,
           startedAt: Number(src.session.startedAt) || 0,
           graceEndsAt: Number(src.session.graceEndsAt) || 0,
-          focusedSeconds: Math.max(0, Number(src.session.focusedSeconds) || 0),
+          focusedSeconds: nonNeg(src.session.focusedSeconds),
           lastTickAt: Number(src.session.lastTickAt) || 0,
           capSeconds: Number(src.session.capSeconds) || 0,
+          nextInterventionAt: nonNeg(src.session.nextInterventionAt),
         };
       }
       state.sites[pattern] = site;
@@ -146,6 +189,9 @@
       state.stats.blocked = 0;
       state.stats.sessions = 0;
       state.stats.focusSeconds = 0;
+      state.stats.interventions = 0;
+      state.stats.turnedAway = 0;
+      state.stats.intentions = 0;
     }
     for (const key of Object.keys(state.sites)) {
       if (state.sites[key].day !== today) {
@@ -189,34 +235,118 @@
     return Math.max(0, state.pause.until - now);
   }
 
-  /**
-   * Can a new focus pause start right now?
-   * Returns { ok, reason, retryAt, remainingToday }
-   */
+  /* ------------------------------------------------------------------ */
+  /* scheduled blocks                                                    */
+  /* ------------------------------------------------------------------ */
+
+  function minutesOf(hhmm) {
+    const parts = String(hhmm).split(':');
+    return Number(parts[0]) * 60 + Number(parts[1] || 0);
+  }
+
+  function dayStart(now) {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  /** Is this block live at `now`, and when does it end? */
+  function blockWindow(block, now) {
+    const d = new Date(now);
+    const day = d.getDay();
+    const mins = d.getHours() * 60 + d.getMinutes();
+    const start = minutesOf(block.start);
+    const end = minutesOf(block.end);
+    const midnight = dayStart(now);
+    const overnight = end <= start;
+
+    if (!overnight) {
+      if (!block.days.includes(day) || mins < start || mins >= end) return null;
+      return { endsAt: midnight + end * 60000 };
+    }
+    // e.g. 22:00 → 02:00: runs into the next calendar day.
+    const todayApplies = block.days.includes(day) && mins >= start;
+    if (todayApplies) return { endsAt: midnight + 86400000 + end * 60000 };
+    const yesterday = (day + 6) % 7;
+    const earlyMorning = block.days.includes(yesterday) && mins < end;
+    if (earlyMorning) return { endsAt: midnight + end * 60000 };
+    return null;
+  }
+
+  /** The schedule as it stands right now. */
+  function scheduleStatus(cfg, now) {
+    const sched = cfg.schedule || { enabled: false, blocks: [], pausable: false };
+    if (!sched.enabled || !sched.blocks.length) {
+      return { active: false, block: null, endsAt: 0, nextStart: 0, nextBlock: null, pausable: !!sched.pausable };
+    }
+    for (const block of sched.blocks) {
+      if (!block.enabled) continue;
+      const win = blockWindow(block, now);
+      if (win) {
+        return { active: true, block, endsAt: win.endsAt, nextStart: 0, nextBlock: null, pausable: !!sched.pausable };
+      }
+    }
+    // Nothing active: find the next window so the UI can say "block starts in 2h".
+    let nextStart = 0;
+    let nextBlock = null;
+    for (let offset = 0; offset < 8; offset++) {
+      const probe = dayStart(now) + offset * 86400000;
+      for (const block of sched.blocks) {
+        if (!block.enabled) continue;
+        for (let dayOffset = 0; dayOffset <= offset; dayOffset++) {
+          const dayTs = dayStart(now) + (offset - dayOffset) * 86400000;
+          const day = new Date(dayTs).getDay();
+          if (!block.days.includes(day)) continue;
+          const candidate = dayTs + minutesOf(block.start) * 60000;
+          if (candidate > now && (!nextStart || candidate < nextStart)) {
+            nextStart = candidate;
+            nextBlock = block;
+          }
+        }
+      }
+      if (nextStart) break;
+    }
+    return { active: false, block: null, endsAt: 0, nextStart, nextBlock, pausable: !!sched.pausable };
+  }
+
+  /** A scheduled block that a pause is allowed to override. */
+  function scheduleBlocksAccess(state, cfg, now) {
+    const status = scheduleStatus(cfg, now);
+    if (!status.active) return false;
+    if (pauseActive(state, now) && status.pausable) return false;
+    return true;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* pause gate                                                          */
+  /* ------------------------------------------------------------------ */
+
   function canStartPause(state, cfg, now) {
     rollDay(state, now);
     const pause = state.pause;
     const limit = cfg.pause.maxPerDay;
     if (pauseActive(state, now)) {
-      return { ok: false, reason: 'already-paused', retryAt: pause.until, remainingToday: Math.max(0, limit - pause.usedToday) };
+      return {
+        ok: false,
+        reason: 'already-paused',
+        retryAt: pause.until,
+        remainingToday: Math.max(0, limit - pause.usedToday),
+      };
     }
     const gapMs = (Number(cfg.pause.minGapMinutes) || 0) * 60000;
     if (gapMs > 0 && pause.lastPauseAt && now < pause.lastPauseAt + gapMs) {
-      return { ok: false, reason: 'too-soon', retryAt: pause.lastPauseAt + gapMs, remainingToday: Math.max(0, limit - pause.usedToday) };
+      return {
+        ok: false,
+        reason: 'too-soon',
+        retryAt: pause.lastPauseAt + gapMs,
+        remainingToday: Math.max(0, limit - pause.usedToday),
+      };
     }
-    if (limit <= 0) {
-      return { ok: false, reason: 'disabled', retryAt: 0, remainingToday: 0 };
-    }
-    if (pause.usedToday >= limit) {
-      return { ok: false, reason: 'daily-limit', retryAt: 0, remainingToday: 0 };
-    }
+    if (limit <= 0) return { ok: false, reason: 'disabled', retryAt: 0, remainingToday: 0 };
+    if (pause.usedToday >= limit) return { ok: false, reason: 'daily-limit', retryAt: 0, remainingToday: 0 };
     return { ok: true, reason: 'ok', retryAt: 0, remainingToday: limit - pause.usedToday };
   }
 
-  /**
-   * Start a focus pause. In strict mode only the configured presets are
-   * accepted and the duration is hard-capped, so you cannot "just" buy an hour.
-   */
   function startPause(state, cfg, minutes, now) {
     rollDay(state, now);
     const gate = canStartPause(state, cfg, now);
@@ -246,26 +376,18 @@
       site.cooldownReason = null;
       site.session = null;
     }
-    return {
-      ok: true,
-      until: state.pause.until,
-      minutes: chosen,
-      remainingToday: gate.remainingToday - 1,
-    };
+    return { ok: true, until: state.pause.until, minutes: chosen, remainingToday: gate.remainingToday - 1 };
   }
 
   function stopPause(state, now) {
     const wasActive = pauseActive(state, now);
     state.pause.until = 0;
-    // Sessions opened during the pause become real sessions starting now, so
-    // you get a fresh grace window instead of being kicked mid-sentence.
     for (const key of Object.keys(state.sites)) {
       state.sites[key].session = null;
     }
     return { ok: true, wasActive };
   }
 
-  /** End any live pause because it expired; returns true when it just did. */
   function expirePause(state, now) {
     if (state.pause.until && state.pause.until <= now) {
       state.pause.until = 0;
@@ -275,13 +397,75 @@
     return false;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* the log (intentions live here too)                                  */
+  /* ------------------------------------------------------------------ */
+
+  function logEvent(state, entry) {
+    if (!Array.isArray(state.log)) state.log = [];
+    state.log.unshift({
+      at: Math.round(entry.at || Date.now()),
+      kind: String(entry.kind || 'event').slice(0, 24),
+      site: entry.site ? Util.normalizeSite(entry.site) : '',
+      text: String(entry.text || '').slice(0, INTENTION_MAX),
+      seconds: Math.max(0, Math.round(entry.seconds || 0)),
+    });
+    if (state.log.length > LOG_MAX) state.log.length = LOG_MAX;
+    return state.log[0];
+  }
+
+  function logSince(state, since, kinds) {
+    const list = Array.isArray(state.log) ? state.log : [];
+    return list.filter((e) => e.at >= since && (!kinds || kinds.includes(e.kind)));
+  }
+
+  /**
+   * Record that an intervention was completed (or walked away from).
+   * `outcome` is 'continue' or 'close'.
+   */
+  function recordIntervention(state, cfg, site, now, outcome, extra) {
+    const st = getSiteState(state, site.pattern, now);
+    state.stats.interventions += 1;
+    if (outcome === 'close') {
+      state.stats.turnedAway += 1;
+      logEvent(state, { at: now, kind: 'turned-away', site: site.pattern, text: '' });
+      return { ok: true };
+    }
+    const iv = cfg.intervention || {};
+    logEvent(state, {
+      at: now,
+      kind: 'intervention',
+      site: site.pattern,
+      text: (extra && extra.intention) || '',
+      seconds: iv.durationSeconds || 0,
+    });
+    if ((extra && extra.intention) || iv.requireIntention) {
+      const text = String((extra && extra.intention) || '').trim();
+      if (text) {
+        state.stats.intentions += 1;
+        logEvent(state, { at: now, kind: 'intention', site: site.pattern, text });
+      }
+    }
+    // A second look later in the visit, if configured.
+    if (iv.reinterveneSeconds > 0) {
+      st.pendingReintervention = true;
+    }
+    return { ok: true };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* navigation                                                          */
+  /* ------------------------------------------------------------------ */
+
   /**
    * Decide what to do when a tab is (or was) heading to `pattern`.
    * Returns one of:
    *   { action:'allow',  ... }  let it load
+   *   { action:'intervene', ... } show the friction screen first
    *   { action:'block',  ... }  send the tab to the blocked page
    */
-  function evaluateNavigation(state, cfg, pattern, tabId, now) {
+  function evaluateNavigation(state, cfg, pattern, tabId, now, opts) {
+    const options = opts || {};
     rollDay(state, now);
     expirePause(state, now);
 
@@ -293,14 +477,36 @@
 
     const st = getSiteState(state, site.pattern, now);
 
+    /* 1. scheduled focus hours win over everything but a pause */
+    if (scheduleBlocksAccess(state, cfg, now)) {
+      const status = scheduleStatus(cfg, now);
+      st.blocked += 1;
+      state.stats.blocked += 1;
+      logEvent(state, { at: now, kind: 'blocked', site: site.pattern, text: 'schedule' });
+      return {
+        action: 'block',
+        reason: REASONS.SCHEDULE,
+        site: site.pattern,
+        label: site.label,
+        until: status.endsAt,
+        cooldownReason: REASONS.SCHEDULE,
+        cooldownLabel: `Focus hours: ${status.block.start}–${status.block.end}`,
+        blockLabel: status.block.label,
+        scheduled: true,
+      };
+    }
+
     if (pauseActive(state, now)) {
       st.lastVisitAt = now;
+      logEvent(state, { at: now, kind: 'visit-paused', site: site.pattern });
       return { action: 'allow', reason: REASONS.PAUSED, pauseUntil: state.pause.until, site: site.pattern };
     }
 
+    /* 2. the cooldown wall */
     if (st.cooldownUntil > now) {
       st.blocked += 1;
       state.stats.blocked += 1;
+      logEvent(state, { at: now, kind: 'blocked', site: site.pattern, text: 'cooldown' });
       return {
         action: 'block',
         reason: REASONS.COOLDOWN,
@@ -343,7 +549,39 @@
       };
     }
 
-    // Fresh visit.
+    /* 3. friction on the way in */
+    const iv = cfg.intervention || {};
+    if (iv.enabled && !options.skipIntervention) {
+      return {
+        action: 'intervene',
+        reason: REASONS.INTERVENE,
+        site: site.pattern,
+        label: site.label,
+        intervention: {
+          type: iv.type,
+          durationSeconds: iv.durationSeconds,
+          requireIntention: iv.requireIntention,
+          showAlternative: iv.showAlternative,
+          alternative: iv.alternative,
+          allowSkip: iv.allowSkip,
+        },
+      };
+    }
+
+    /* 4. a fresh visit */
+    const session = startSession(state, cfg, site, tabId, now);
+    return {
+      action: 'allow',
+      reason: 'started',
+      site: site.pattern,
+      label: site.label,
+      session: publicSession(session, site, now),
+    };
+  }
+
+  function startSession(state, cfg, site, tabId, now) {
+    const st = getSiteState(state, site.pattern, now);
+    const iv = cfg.intervention || {};
     const session = {
       tabId,
       windowId: -1,
@@ -352,17 +590,13 @@
       focusedSeconds: 0,
       lastTickAt: now,
       capSeconds: site.maxSessionSeconds,
+      nextInterventionAt: iv.reinterveneSeconds > 0 ? iv.reinterveneSeconds : 0,
     };
     st.session = session;
     st.lastVisitAt = now;
     state.stats.sessions += 1;
-    return {
-      action: 'allow',
-      reason: 'started',
-      site: site.pattern,
-      label: site.label,
-      session: publicSession(session, site, now),
-    };
+    logEvent(state, { at: now, kind: 'visit', site: site.pattern });
+    return session;
   }
 
   function publicSession(session, site, now) {
@@ -381,8 +615,6 @@
   /**
    * Periodic tick from the page (roughly once a second).
    * `focused` is true only when the tab is visible AND the window has focus.
-   *
-   * Returns { action:'allow'|'close'|'block'|'reload', ... }
    */
   function heartbeat(state, cfg, pattern, tabId, now, focused) {
     rollDay(state, now);
@@ -391,6 +623,17 @@
     const site = findSite(cfg, pattern);
     if (!site || !site.enabled || !cfg.enabled) return { action: 'allow', reason: REASONS.UNTRACKED };
     const st = getSiteState(state, site.pattern, now);
+
+    if (scheduleBlocksAccess(state, cfg, now)) {
+      const status = scheduleStatus(cfg, now);
+      return {
+        action: 'block',
+        reason: REASONS.SCHEDULE,
+        site: site.pattern,
+        label: site.label,
+        until: status.endsAt,
+      };
+    }
 
     if (pauseActive(state, now)) {
       st.lastVisitAt = now;
@@ -429,6 +672,28 @@
       session.focusedSeconds += dt;
       st.focusSeconds += dt;
       state.stats.focusSeconds += dt;
+
+      // A second look mid-visit, if configured.
+      const iv = cfg.intervention || {};
+      if (iv.enabled && session.nextInterventionAt > 0 && session.focusedSeconds >= session.nextInterventionAt) {
+        session.nextInterventionAt = session.focusedSeconds + Math.max(60, iv.reinterveneSeconds);
+        return {
+          action: 'intervene',
+          reason: REASONS.REINTERVENE,
+          site: site.pattern,
+          label: site.label,
+          reintervention: true,
+          intervention: {
+            type: iv.type,
+            durationSeconds: Math.min(iv.durationSeconds, 15),
+            requireIntention: false,
+            showAlternative: iv.showAlternative,
+            alternative: iv.alternative,
+            allowSkip: false,
+          },
+        };
+      }
+
       const cap = session.capSeconds || site.maxSessionSeconds;
       if (session.focusedSeconds >= cap) {
         const result = endVisit(state, cfg, site, now, REASONS.LIMIT);
@@ -443,7 +708,6 @@
         };
       }
     } else if (cfg.behavior.closeOnBlur && st.session) {
-      // Lost focus: allowed only while inside the grace window.
       if (now >= graceEndsAt(session, site)) {
         const result = endVisit(state, cfg, site, now, REASONS.BLUR);
         return {
@@ -492,13 +756,10 @@
     const cooldown = Util.clamp(site.cooldownSeconds, 10, 86400);
     st.cooldownUntil = now + cooldown * 1000;
     st.cooldownReason = reason;
+    logEvent(state, { at: now, kind: 'cooldown', site: site.pattern, text: reason, seconds: cooldown });
     return { cooldownUntil: st.cooldownUntil, cooldownSeconds: cooldown, graceUsed: false };
   }
 
-  /**
-   * The tab/window lost focus (detected by the service worker, which is more
-   * reliable than a content script that might be throttled).
-   */
   function recordLeave(state, cfg, pattern, now, reason, tabGone) {
     rollDay(state, now);
     if (!cfg.enabled || pauseActive(state, now)) return { action: 'allow', reason: REASONS.PAUSED };
@@ -509,17 +770,12 @@
     if (!st.session) return { action: 'allow', reason: 'no-session' };
     if (now < graceEndsAt(st.session, site)) {
       if (tabGone) {
-        // The tab is gone, so the visit is over — but leaving inside grace is
-        // free, so no cooldown. Clearing the session matters, otherwise a
-        // restored tab would look like a "second tab" and get blocked.
         st.bestFocusSeconds = Math.max(st.bestFocusSeconds, Math.round(st.session.focusedSeconds));
         st.session = null;
         st.lastLeaveAt = now;
         st.trips += 1;
         return { action: 'allow', reason: 'grace-closed', cooldownUntil: 0, cooldownSeconds: 0 };
       }
-      // Still inside grace — a free bounce. Keep the visit alive so the user
-      // can come straight back without resetting the grace clock.
       st.session.lastTickAt = now;
       return { action: 'allow', reason: 'grace', graceRemaining: (graceEndsAt(st.session, site) - now) / 1000 };
     }
@@ -534,12 +790,10 @@
     };
   }
 
-  /** Tab was closed outright. */
   function recordTabClosed(state, cfg, pattern, now) {
     return recordLeave(state, cfg, pattern, now, REASONS.CLOSED, true);
   }
 
-  /** Voluntary "End session now" from the chip or the popup. */
   function endSessionManually(state, cfg, pattern, now) {
     const site = findSite(cfg, pattern);
     if (!site) return { ok: false, reason: REASONS.UNTRACKED };
@@ -553,7 +807,6 @@
     return { ok: true, ...result };
   }
 
-  /** Sites whose cooldown expired since the last tick — used for notifications. */
   function collectExpiredCooldowns(state, now) {
     const out = [];
     for (const key of Object.keys(state.sites)) {
@@ -567,11 +820,13 @@
     return out;
   }
 
-  /**
-   * Every tracked site gets a snapshot for the popup / dashboard / chip.
-   */
+  /* ------------------------------------------------------------------ */
+  /* snapshots for the UI                                               */
+  /* ------------------------------------------------------------------ */
+
   function snapshot(state, cfg, now) {
     rollDay(state, now);
+    const sched = scheduleStatus(cfg, now);
     const sites = cfg.sites.map((site) => {
       const st = getSiteState(state, site.pattern, now);
       const cooling = st.cooldownUntil > now;
@@ -601,6 +856,7 @@
       now,
       enabled: cfg.enabled,
       sites,
+      intervention: cfg.intervention,
       pause: {
         active: pauseActive(state, now),
         until: state.pause.until,
@@ -617,13 +873,31 @@
         retryAt: gate.retryAt,
         remainingToday: gate.remainingToday,
       },
+      schedule: {
+        enabled: cfg.schedule.enabled,
+        pausable: cfg.schedule.pausable,
+        active: sched.active,
+        block: sched.block
+          ? { id: sched.block.id, label: sched.block.label, start: sched.block.start, end: sched.block.end, days: sched.block.days }
+          : null,
+        endsAt: sched.endsAt,
+        nextStart: sched.nextStart,
+        nextBlock: sched.nextBlock ? { id: sched.nextBlock.id, label: sched.nextBlock.label, start: sched.nextBlock.start, end: sched.nextBlock.end } : null,
+        blocks: cfg.schedule.blocks,
+      },
       stats: {
         day: state.stats.day,
         blocked: state.stats.blocked,
         sessions: state.stats.sessions,
         focusSeconds: Math.round(state.stats.focusSeconds),
+        interventions: state.stats.interventions,
+        turnedAway: state.stats.turnedAway,
+        intentions: state.stats.intentions,
         pauses: state.pause.total,
       },
+      /** Today's intentions + a short activity mirror, newest first. */
+      log: (Array.isArray(state.log) ? state.log : []).slice(0, 40),
+      intentions: (Array.isArray(state.log) ? state.log : []).filter((e) => e.kind === 'intention').slice(0, 12),
       totals: sites.reduce(
         (acc, s) => {
           if (s.cooldownUntil) acc.cooling += 1;
@@ -650,12 +924,18 @@
     startPause,
     stopPause,
     expirePause,
+    scheduleStatus,
+    scheduleBlocksAccess,
     evaluateNavigation,
+    startSession,
     heartbeat,
     endVisit,
     recordLeave,
     recordTabClosed,
     endSessionManually,
+    recordIntervention,
+    logEvent,
+    logSince,
     collectExpiredCooldowns,
     snapshot,
     publicSession,

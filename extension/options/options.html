@@ -2,23 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FocusFrost — Settings</title>
+  <link rel="icon" href="../icons/icon48.png" />
   <link rel="stylesheet" href="../assets/ui.css" />
-  <link rel="stylesheet" href="options.css" />
+  <link rel="stylesheet" href="app.css" />
 </head>
-<body>
+<body class="app">
   <div class="shell">
+    <!-- ================= sidebar ================= -->
     <aside class="sidebar">
       <div class="brand">
         <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
           <defs>
-            <linearGradient id="og1" x1="0" y1="0" x2="1" y2="1">
+            <linearGradient id="ag1" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stop-color="#a9e6ff" />
               <stop offset="1" stop-color="#4a9df5" />
             </linearGradient>
           </defs>
-          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#og1)" opacity="0.22" />
-          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#og1)" stroke-width="1.6" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="url(#ag1)" opacity="0.22" />
+          <path d="M16 2 L27 7 v9c0 7-5 12-11 14C10 28 5 23 5 16V7z" fill="none" stroke="url(#ag1)" stroke-width="1.6" />
           <path d="M16 10v12M11 13.5l10 5M21 13.5l-10 5" stroke="#dff4ff" stroke-width="1.7" stroke-linecap="round" />
         </svg>
         <div>
@@ -27,223 +30,35 @@
         </div>
       </div>
 
-      <nav class="tabs">
-        <button class="tab on" data-tab="sites">Sites</button>
-        <button class="tab" data-tab="rules">Rules</button>
-        <button class="tab" data-tab="pause">Pause</button>
-        <button class="tab" data-tab="data">Data</button>
-      </nav>
+      <nav class="nav" id="nav" aria-label="Settings sections"></nav>
 
       <div class="side-foot">
-        <label class="row small">
+        <label class="row small master">
           <span class="switch">
             <input type="checkbox" id="master" />
             <span></span>
           </span>
-          <span id="masterLabel">Tracking on</span>
+          <span id="masterLabel">Shield is on</span>
         </label>
-        <p class="tiny dim">v1.0 · local only</p>
+        <div class="row small side-stats">
+          <span id="sideStatus" class="badge off">idle</span>
+          <span class="dim tiny" id="sideBlocked">0 blocked today</span>
+        </div>
+        <p class="tiny dim">v1.1 · local only</p>
       </div>
     </aside>
 
+    <!-- ================= content ================= -->
     <main class="content">
-      <!-- ============ SITES ============ -->
-      <section class="pane on" id="pane-sites">
-        <header class="pane-head">
-          <div>
-            <h2>Tracked sites</h2>
-            <p class="small muted">Every domain here gets the full treatment: grace window, one live tab, hard cooldown.</p>
-          </div>
-        </header>
-
-        <div class="card add-card">
-          <div class="add-row">
-            <input type="text" id="addInput" placeholder="add a site, e.g. instagram.com" spellcheck="false" autocomplete="off" />
-            <button id="addBtn" class="btn btn-primary">Add site</button>
-          </div>
-          <div id="suggestions" class="suggestions"></div>
+      <header class="topbar">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="row">
+          <button id="dashBtn" class="btn btn-sm btn-ghost">Dashboard</button>
+          <button id="saveBtn" class="btn btn-sm btn-primary" disabled>Saved</button>
         </div>
+      </header>
 
-        <div id="sitesList" class="sites-list"></div>
-
-        <div class="card bulk">
-          <div class="spread">
-            <div>
-              <h3>Apply to all sites</h3>
-              <p class="tiny dim">Sets cooldown / grace / focus cap on every tracked site at once.</p>
-            </div>
-            <button id="applyAll" class="btn btn-sm">Apply current values</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ RULES ============ -->
-      <section class="pane" id="pane-rules">
-        <header class="pane-head">
-          <div>
-            <h2>Rules</h2>
-            <p class="small muted">How hard FocusFrost pushes. Be honest with yourself here.</p>
-          </div>
-        </header>
-
-        <div class="card stack">
-          <div class="rule">
-            <div class="rule-text">
-              <h3>Close the tab when you leave</h3>
-              <p class="small muted">Switch tabs or windows after the grace window and the site is closed instantly.</p>
-            </div>
-            <label class="switch"><input type="checkbox" id="closeOnBlur" /><span></span></label>
-          </div>
-          <div class="rule">
-            <div class="rule-text">
-              <h3>One tab only</h3>
-              <p class="small muted">A second tab pointing at a tracked site is bounced to the cooling-down page.</p>
-            </div>
-            <label class="switch"><input type="checkbox" id="blockNewTabs" /><span></span></label>
-          </div>
-          <div class="rule">
-            <div class="rule-text">
-              <h3>Show the on-page timer</h3>
-              <p class="small muted">A small frosty chip with your grace and focus countdown. Click it to collapse.</p>
-            </div>
-            <label class="switch"><input type="checkbox" id="showChip" /><span></span></label>
-          </div>
-          <div class="rule">
-            <div class="rule-text">
-              <h3>Notifications</h3>
-              <p class="small muted">Tell me when a session ends or a cooldown clears.</p>
-            </div>
-            <label class="switch"><input type="checkbox" id="notifyOnEnd" /><span></span></label>
-          </div>
-        </div>
-
-        <div class="card stack">
-          <h3>Defaults for new sites</h3>
-          <div class="grid3">
-            <div class="field">
-              <label for="defCooldown">Cooldown</label>
-              <div class="row"><input type="number" id="defCooldown" min="1" max="1440" /><span class="unit">min</span></div>
-            </div>
-            <div class="field">
-              <label for="defGrace">Grace window</label>
-              <div class="row"><input type="number" id="defGrace" min="0" max="600" /><span class="unit">sec</span></div>
-            </div>
-            <div class="field">
-              <label for="defCap">Focus cap</label>
-              <div class="row"><input type="number" id="defCap" min="1" max="120" /><span class="unit">min</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card explain">
-          <h3>How the clock actually works</h3>
-          <ol class="steps">
-            <li><b>Grace.</b> The clock starts the second the page opens. Leave and come back inside the grace window and nothing happens — no penalty, no reset.</li>
-            <li><b>Focus.</b> Past grace, the stopwatch only runs while the tab is visible <em>and</em> the window has focus. Stay put and you get the full focus cap.</li>
-            <li><b>Cooldown.</b> Leave, close, or hit the cap and the site locks for its cooldown. Reloading, restarting the browser, or opening a new tab all hit the same wall.</li>
-          </ol>
-        </div>
-      </section>
-
-      <!-- ============ PAUSE ============ -->
-      <section class="pane" id="pane-pause">
-        <header class="pane-head">
-          <div>
-            <h2>Pause</h2>
-            <p class="small muted">The escape hatch for when you genuinely need the site. It is deliberately slightly annoying.</p>
-          </div>
-        </header>
-
-        <div class="card stack">
-          <div class="field">
-            <div class="spread">
-              <label for="holdMs">Hold to confirm</label>
-              <span id="holdMsOut" class="mono small">6.0s</span>
-            </div>
-            <input type="range" id="holdMs" min="3" max="10" step="0.5" />
-            <p class="tiny dim">Press and hold this long before a pause unlocks.</p>
-          </div>
-
-          <hr class="divider" />
-
-          <div class="field">
-            <label>Allowed pause lengths (minutes)</label>
-            <p class="tiny dim">Pick up to four. In strict mode nothing else is accepted.</p>
-            <div class="chips" id="presetChips"></div>
-            <div class="row add-preset">
-              <input type="number" id="newPreset" min="1" max="30" placeholder="minutes" />
-              <button class="btn btn-sm" id="addPreset">Add</button>
-            </div>
-          </div>
-
-          <hr class="divider" />
-
-          <div class="grid2">
-            <div class="field">
-              <label for="maxPerDay">Pauses per day</label>
-              <input type="number" id="maxPerDay" min="0" max="10" />
-              <p class="tiny dim">0 disables pausing entirely.</p>
-            </div>
-            <div class="field">
-              <label for="minGap">Minimum gap</label>
-              <div class="row"><input type="number" id="minGap" min="0" max="480" /><span class="unit">min</span></div>
-              <p class="tiny dim">Forced rest between two pauses.</p>
-            </div>
-          </div>
-
-          <div class="rule">
-            <div class="rule-text">
-              <h3>Strict mode</h3>
-              <p class="small muted">Only the presets above are accepted, and every duration is capped. No custom durations.</p>
-            </div>
-            <label class="switch"><input type="checkbox" id="strict" /><span></span></label>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="spread">
-            <div>
-              <h3>Today</h3>
-              <p class="small muted" id="pauseUsage">—</p>
-            </div>
-            <button id="resumeNow" class="btn btn-sm">Resume tracking now</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ DATA ============ -->
-      <section class="pane" id="pane-data">
-        <header class="pane-head">
-          <div>
-            <h2>Data</h2>
-            <p class="small muted">Everything lives in <code class="kbd">chrome.storage.local</code>. No servers, no analytics.</p>
-          </div>
-        </header>
-
-        <div class="card" id="todayCard">
-          <h3>Today</h3>
-          <div class="stat-grid" id="todayStats"></div>
-        </div>
-
-        <div class="card">
-          <h3>Maintenance</h3>
-          <div class="stack-sm">
-            <button id="clearCooldowns" class="btn btn-sm">Clear all cooldowns &amp; end pause</button>
-            <button id="resetStats" class="btn btn-sm">Reset statistics</button>
-            <button id="exportBtn" class="btn btn-sm">Export settings JSON</button>
-            <button id="importBtn" class="btn btn-sm">Import settings JSON</button>
-            <input type="file" id="importFile" accept="application/json" class="hidden" />
-          </div>
-          <p class="tiny dim">Clearing cooldowns is deliberately buried in settings — it is an emergency exit, not a habit.</p>
-        </div>
-
-        <div class="card">
-          <h3>Uninstall note</h3>
-          <p class="small muted">FocusFrost never phones home, so there is nothing to sign out of. Removing the extension deletes its storage.</p>
-        </div>
-      </section>
-
-      <div class="savebar">Saved automatically</div>
+      <div class="panes" id="panes"></div>
     </main>
   </div>
 
@@ -251,6 +66,8 @@
 
   <script src="../shared/util.js"></script>
   <script src="../shared/config.js"></script>
-  <script src="options.js"></script>
+  <script src="app-core.js"></script>
+  <script src="app-sections.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

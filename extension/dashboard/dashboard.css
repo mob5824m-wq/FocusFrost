@@ -116,3 +116,35 @@
   .trow .tnum.hide-sm { display: none; }
   .bar-row { grid-template-columns: 84px 1fr 52px; }
 }
+
+/* ---------- sandbox: intervention gate ---------- */
+.sim-gate {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 150, 255, 0.35);
+  background: linear-gradient(180deg, rgba(90, 120, 255, 0.10), rgba(90, 120, 255, 0.04));
+}
+.sim-gate.hidden { display: none; }
+.sim-gate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.sim-intention {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--stroke, rgba(20,30,50,0.15));
+  background: rgba(255,255,255,0.7);
+  font: inherit;
+  font-size: 12.5px;
+  color: inherit;
+}
+.sim-intention:focus { outline: 2px solid rgba(90, 120, 255, 0.5); outline-offset: 1px; }
+.sim-gate-actions { display: flex; gap: 8px; margin-top: 10px; }
+.sim-gate-actions .btn:first-child { order: 2; }
+.sim-gate-actions .btn:last-child { order: 1; }

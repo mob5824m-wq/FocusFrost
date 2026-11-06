@@ -285,10 +285,35 @@
     };
   }
 
+  /**
+   * Apply a change the popup owns on top of the full settings object.
+   *
+   * The popup only edits a couple of switches, but a save replaces the whole
+   * settings object. Rebuilding one from just the fields the popup renders used
+   * to drop the schedule, the friction screen and its alternative text — so a
+   * single toggle quietly undid work done on the settings page. This keeps
+   * everything it is not explicitly changing.
+   */
+  function mergeEdits(fullSettings, edits) {
+    const base = fullSettings && typeof fullSettings === 'object' ? fullSettings : defaultSettings();
+    const merged = JSON.parse(JSON.stringify(base));
+    const patch = edits && typeof edits === 'object' ? edits : {};
+    for (const key of Object.keys(patch)) {
+      const value = patch[key];
+      if (value && typeof value === 'object' && !Array.isArray(value) && merged[key] && typeof merged[key] === 'object') {
+        merged[key] = Object.assign({}, merged[key], value);
+      } else {
+        merged[key] = value;
+      }
+    }
+    return merged;
+  }
+
   return {
     LIMITS,
     PRESET_SITES,
     INTERVENTIONS,
+    mergeEdits,
     defaultSettings,
     normalizeSettings,
     normalizeBlock,

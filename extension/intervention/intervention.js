@@ -21,6 +21,9 @@
   const siteLabel = params.get('label') || Util.siteLabel(site) || site;
   const mode = params.get('mode') === 'again' ? 'again' : 'enter';
   const urlTabId = Number(params.get('tab')) || null;
+  // The settings page embeds this screen as a live preview. Nothing there
+  // should actually grant a pass or navigate, so it says so instead of lying.
+  const preview = params.get('preview') === '1';
 
   const el = {
     sitePill: $('sitePill'),
@@ -40,8 +43,6 @@
     intentWrap: $('intentWrap'),
     intention: $('intention'),
     intentHint: $('intentHint'),
-    reflectDone: $('reflectDone'),
-    reflectNote: $('reflectNote'),
     phrase: $('phrase'),
     typed: $('typed'),
     typeStatus: $('typeStatus'),
@@ -81,7 +82,7 @@
   /* ------------------------------------------------------------------ */
 
   async function boot() {
-    await reportTab();
+    if (!preview) await reportTab();
     // Pull the live config from the worker so the gate always matches settings.
     const res = await send({ type: 'interventionConfig', url: target || `https://${site}/` });
     status = res && res.ok ? res : null;
@@ -127,6 +128,17 @@
     });
   }
 
+  /**
+   * The stage sections sit above the footer, so a footer only makes sense for
+   * the stage you are actually on. Breathing keeps its choices hidden until the
+   * breath is done; the text stages show them straight away (the continue
+   * button stays disabled until they are satisfied, so it doubles as the
+   * "here is what is left" hint).
+   */
+  function showChoices(show) {
+    el.choices.classList.toggle('hidden', !show);
+  }
+
   function renderGateButtons() {
     const pause = status && status.pause;
     if (pause) {
@@ -149,7 +161,7 @@
 
   function startBreathing(fourSevenEight) {
     el.breath.classList.remove('hidden');
-    el.choices.classList.add('hidden');
+    showChoices(false);
     el.continueBtn.disabled = true;
 
     // 4-7-8 runs one structured cycle; the plain breath gets two calm cycles.
@@ -209,6 +221,7 @@
     el.phaseCount.textContent = '✓';
     el.breathTitle.textContent = 'That was the whole point.';
     el.breathLede.textContent = 'Notice whether you still want this.';
+    showChoices(true);
     unlockContinue('Continue to ' + siteLabel);
   }
 
@@ -218,7 +231,7 @@
 
   function startReflection() {
     el.reflect.classList.remove('hidden');
-    el.choices.classList.add('hidden');
+    showChoices(true);
 
     if (config.type === 'intention') {
       el.reflectTitle.textContent = 'One sentence first.';
@@ -270,33 +283,46 @@
       el.questions.appendChild(box);
     });
 
-    if (config.type === 'intention') {
-      el.intentWrap.classList.remove('hidden');
-      el.intentHint.textContent = 'Saved to today’s log so you can check yourself later.';
-    } else {
-      el.intentWrap.classList.remove('hidden');
-      el.intentHint.textContent = 'Optional, but it makes the second look cheaper.';
-    }
-
-    el.reflectDone.classList.remove('hidden');
-    el.reflectDone.classList.add('btn-ghost');
-    el.reflectDone.textContent = 'Skip the questions and close the tab';
-    el.reflectDone.onclick = closeInstead;
+    el.intentWrap.classList.remove('hidden');
 
     updateReflectReady();
   }
 
+  const INTENT_HINT = {
+    intention: 'Saved to today’s log so you can check yourself later.',
+    reflect: 'Optional, but it makes the second look cheaper.',
+  };
+
   function updateReflectReady() {
-    // Intention mode insists on a sentence; reflection just wants the answers.
+    // Intention mode insists on a sentence; reflection wants the three answers,
+    // or at least a written line (which is the honest version of the same thing).
     const typedSomething = el.intention.value.trim().length >= 4;
     const answered = answers.filter(Boolean).length >= 3;
     const ready = config.type === 'intention' ? typedSomething : answered || typedSomething;
-    if (ready) unlockContinue('Continue to ' + siteLabel);
-    else {
-      el.continueBtn.disabled = true;
-      el.continueSub.textContent =
-        config.type === 'intention' ? 'write your intention first' : 'answer the questions or write a line';
+
+    if (ready) {
+      el.intentHint.textContent = INTENT_HINT[config.type] || INTENT_HINT.reflect;
+      unlockContinue('Continue to ' + siteLabel);
+      return;
     }
+
+    el.continueBtn.disabled = true;
+    if (config.type === 'intention') {
+      // Say exactly why the button is asleep, right where the sentence goes.
+      const left = Math.max(0, 4 - el.intention.value.trim().length);
+      el.continueSub.textContent = 'write your intention first';
+      el.intentHint.textContent =
+        el.intention.value.trim().length === 0
+          ? 'One short line is all it takes — then the button below wakes up.'
+          : 'Just ' + left + ' more character' + (left === 1 ? '' : 's') + '.';
+      return;
+    }
+    const missing = 3 - answers.filter(Boolean).length;
+    el.continueSub.textContent = 'answer the questions or write a line';
+    el.intentHint.textContent =
+      missing > 0
+        ? missing + ' question' + (missing === 1 ? '' : 's') + ' to go — or skip straight to the one line.'
+        : INTENT_HINT.reflect;
   }
 
   function onIntention() {
@@ -319,7 +345,7 @@
 
   function startTyping() {
     el.type.classList.remove('hidden');
-    el.choices.classList.add('hidden');
+    showChoices(true);
 
     const words = PHRASES[Math.floor(Math.random() * PHRASES.length)].split(' ');
     const phrase = words
@@ -372,6 +398,13 @@
   async function continueOn() {
     if (finished || el.continueBtn.disabled) return;
     const intention = el.intention.value.trim();
+    if (preview) {
+      // Show the real outcome without recording anything or leaving the page.
+      finish('continue');
+      el.doneLede.textContent =
+        'This is the preview, so nothing was recorded. On the real screen ' + siteLabel + ' opens now.';
+      return;
+    }
     await send({
       type: 'interventionDone',
       outcome: 'continue',
@@ -395,6 +428,10 @@
 
   async function closeInstead() {
     if (finished) return;
+    if (preview) {
+      finish('close');
+      return;
+    }
     finished = true;
     await send({ type: 'interventionDone', outcome: 'close', site, target, tabId, answers: answers.filter(Boolean) });
     // Walk away: if there is a page behind us, go back; otherwise close the tab.
@@ -417,7 +454,7 @@
     el.breath.classList.add('hidden');
     el.reflect.classList.add('hidden');
     el.type.classList.add('hidden');
-    el.choices.classList.add('hidden');
+    showChoices(false);
     el.alternative.classList.add('hidden');
     el.done.classList.remove('hidden');
     el.doneTitle.textContent = outcome === 'continue' ? 'Your call.' : 'Good choice.';

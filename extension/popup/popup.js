@@ -4,6 +4,7 @@
 
   const Util = window.FFUtil;
   const Config = window.FFConfig;
+  const FFHold = window.FFHold;
   const CIRC = 219.9;
 
   const $ = (id) => document.getElementById(id);
@@ -35,9 +36,6 @@
 
   let status = null;
   let selectedMinutes = null;
-  let holding = false;
-  let holdStart = 0;
-  let holdRaf = null;
   let toastTimer = null;
 
   function send(message) {
@@ -203,8 +201,10 @@
   function renderHold(pause) {
     syncPresetSelection(pause);
     const canPause = pause.canStart && selectedMinutes && status.enabled;
-    el.holdBtn.disabled = !canPause || holding;
-    el.holdBtn.classList.toggle('holding', holding);
+    // Never disabled mid-hold: that drops pointer capture and breaks the
+    // gesture. Visual state only.
+    el.holdBtn.disabled = !canPause;
+    el.holdBtn.classList.toggle('holding', hold.holding());
     const seconds = Math.round(pause.holdMs / 1000);
 
     if (pause.active) {
@@ -290,87 +290,61 @@
   /* hold-to-pause                                                      */
   /* ------------------------------------------------------------------ */
 
-  function startHold(e) {
-    if (e && e.button !== undefined && e.button !== 0) return;
-    if (!status || !status.pause.canStart || holding) return;
-    if (!status.enabled) {
-      toast('Turn FocusFrost on first');
-      return;
-    }
-    holding = true;
-    holdStart = performance.now();
-    el.holdBtn.classList.add('holding');
-    el.holdFill.style.width = '0%';
-    el.holdFill.classList.remove('done');
-    const total = status.pause.holdMs;
-
-    const tick = () => {
-      if (!holding) return;
-      const elapsed = performance.now() - holdStart;
-      const pct = Math.min(100, (elapsed / total) * 100);
-      el.holdFill.style.width = pct + '%';
-      const left = Math.max(0, Math.ceil((total - elapsed) / 1000));
-      el.holdLabel.innerHTML = `<b class="mono">${left}s</b> — keep holding…`;
-      if (elapsed >= total) {
-        completeHold();
-        return;
+  /**
+   * The gesture itself lives in shared/hold.js, so the popup, the cooling-down
+   * page and the dashboard cannot drift apart. This page only decides what the
+   * hold is allowed to do and what it looks like while it runs.
+   *
+   * One rule that matters: while a hold is running the button must NOT be
+   * disabled. The page re-renders every half second, and `disabled` drops the
+   * pointer capture — on a touch screen that silently kills a hold halfway
+   * through. Reflect the state in the classes instead.
+   */
+  const hold = FFHold.create({
+    el: el.holdBtn,
+    fill: el.holdFill,
+    durationMs: () => (status && status.pause ? status.pause.holdMs : 6000),
+    canStart: () => {
+      if (!status || !status.pause.canStart) return false;
+      if (!status.enabled) {
+        toast('Turn FocusFrost on first');
+        return false;
       }
-      holdRaf = requestAnimationFrame(tick);
-    };
-    holdRaf = requestAnimationFrame(tick);
-  }
-
-  function cancelHold() {
-    if (!holding) return;
-    holding = false;
-    cancelAnimationFrame(holdRaf);
-    holdRaf = null;
-    el.holdFill.style.width = '0%';
-    el.holdBtn.classList.remove('holding');
-    render();
-  }
-
-  async function completeHold() {
-    holding = false;
-    cancelAnimationFrame(holdRaf);
-    holdRaf = null;
-    el.holdFill.style.width = '100%';
-    el.holdFill.classList.add('done');
-    el.holdBtn.classList.remove('holding');
-
-    const res = await send({ type: 'startPause', minutes: selectedMinutes });
-    if (res && res.ok) {
-      const r = res.result || {};
-      toast(`Paused for ${r.minutes || selectedMinutes} min — focus mode is off duty`);
-      if (navigator.vibrate) navigator.vibrate(18);
-    } else {
-      toast('Could not pause: ' + ((res && res.result && res.result.reason) || 'not allowed'));
-    }
-    status = res && res.ok ? res : status;
-    setTimeout(() => {
-      el.holdFill.style.width = '0%';
-      el.holdFill.classList.remove('done');
-      refresh();
-    }, 700);
-    render();
-  }
-
-  el.holdBtn.addEventListener('pointerdown', (e) => {
-    el.holdBtn.setPointerCapture && el.holdBtn.setPointerCapture(e.pointerId);
-    startHold(e);
+      return true;
+    },
+    onStart: () => {
+      el.holdBtn.classList.add('holding');
+      el.holdLabel.innerHTML = 'keep holding…';
+    },
+    onTick: ({ secondsLeft, percent }) => {
+      el.holdFill.style.width = percent + '%';
+      el.holdLabel.innerHTML = `<b class="mono">${secondsLeft}s</b> — keep holding…`;
+    },
+    onCancel: () => {
+      el.holdBtn.classList.remove('holding');
+      render();
+    },
+    onComplete: async () => {
+      el.holdBtn.classList.remove('holding');
+      const res = await send({ type: 'startPause', minutes: selectedMinutes });
+      if (res && res.ok) {
+        const r = res.result || {};
+        toast(`Paused for ${r.minutes || selectedMinutes} min — focus mode is off duty`);
+        if (navigator.vibrate) navigator.vibrate(18);
+      } else {
+        toast('Could not pause: ' + ((res && res.result && res.result.reason) || 'not allowed'));
+      }
+      status = res && res.ok ? res : status;
+      setTimeout(() => {
+        hold.reset();
+        refresh();
+      }, 700);
+      render();
+    },
   });
-  for (const evt of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) {
-    el.holdBtn.addEventListener(evt, cancelHold);
-  }
-  el.holdBtn.addEventListener('keydown', (e) => {
-    if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
-      e.preventDefault();
-      startHold();
-    }
-  });
-  el.holdBtn.addEventListener('keyup', (e) => {
-    if (e.key === ' ' || e.key === 'Enter') cancelHold();
-  });
+
+  hold.attach();
+
   el.holdBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* ------------------------------------------------------------------ */

@@ -3,6 +3,7 @@
   'use strict';
 
   const Util = window.FFUtil;
+  const FFHold = window.FFHold;
   const CIRC = 603.2;
   const $ = (id) => document.getElementById(id);
 
@@ -26,9 +27,6 @@
   let cooldownTotal = 0;
   let status = null;
   let selectedMinutes = null;
-  let holding = false;
-  let holdStart = 0;
-  let raf = null;
   let toastTimer = null;
   let breatheConfig = null; // { enabled, minutes, durationSeconds }
   let breathing = false;
@@ -422,7 +420,9 @@
     syncPresets();
 
     const canPause = pause.canStart;
-    el.hold.disabled = !canPause || holding;
+    // Never disabled mid-hold: that drops pointer capture and kills the gesture.
+    el.hold.disabled = !canPause;
+    el.hold.classList.toggle('holding', hold.holding());
     const seconds = Math.round(pause.holdMs / 1000);
     if (canPause) {
       el.holdLabel.textContent = `Hold ${seconds}s to unlock ${selectedMinutes} min`;
@@ -451,63 +451,46 @@
 
   /* ---------------- hold to pause ---------------- */
 
-  function startHold(e) {
-    if (e && e.button !== undefined && e.button !== 0) return;
-    if (!status || !status.pause.canStart || holding) return;
-    holding = true;
-    holdStart = performance.now();
-    el.hold.classList.add('holding');
-    el.fill.style.width = '0%';
-    el.fill.classList.remove('done');
-    const total = status.pause.holdMs;
-
-    const step = () => {
-      if (!holding) return;
-      const elapsed = performance.now() - holdStart;
-      el.fill.style.width = Math.min(100, (elapsed / total) * 100) + '%';
-      const left = Math.max(0, Math.ceil((total - elapsed) / 1000));
-      el.holdLabel.textContent = `${left}s — keep holding`;
-      if (elapsed >= total) return finishHold();
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-  }
-
-  function cancelHold() {
-    if (!holding) return;
-    holding = false;
-    cancelAnimationFrame(raf);
-    el.fill.style.width = '0%';
-    el.hold.classList.remove('holding');
-    renderPauseUi();
-    el.holdLabel.style.fontSize = '';
-  }
-
-  async function finishHold() {
-    holding = false;
-    cancelAnimationFrame(raf);
-    el.fill.style.width = '100%';
-    el.fill.classList.add('done');
-    el.hold.classList.remove('holding');
-    el.holdLabel.textContent = 'Unlocking…';
-    const res = await send({ type: 'startPause', minutes: selectedMinutes });
-    if (res && res.ok) {
-      toast(`Paused for ${selectedMinutes} min. The shield is off.`);
-      setTimeout(() => location.replace(`https://${site}`), 600);
-    } else {
-      toast('Pause refused — the limit is the point.');
-      el.fill.style.width = '0%';
-      el.fill.classList.remove('done');
-      refresh();
-    }
-  }
-
-  el.hold.addEventListener('pointerdown', (e) => {
-    el.hold.setPointerCapture && el.hold.setPointerCapture(e.pointerId);
-    startHold(e);
+  /**
+   * The gesture is shared/hold.js so this page cannot drift from the popup or
+   * the dashboard. What is local is the consequence: spend one of the day's
+   * pauses, then leave for the site.
+   */
+  const hold = FFHold.create({
+    el: el.hold,
+    fill: el.fill,
+    durationMs: () => (status && status.pause ? status.pause.holdMs : 6000),
+    canStart: () => !!(status && status.pause.canStart),
+    onStart: () => {
+      el.hold.classList.add('holding');
+      el.holdLabel.style.fontSize = '';
+    },
+    onTick: ({ secondsLeft, percent }) => {
+      el.fill.style.width = percent + '%';
+      el.holdLabel.textContent = `${secondsLeft}s — keep holding`;
+    },
+    onCancel: () => {
+      el.hold.classList.remove('holding');
+      renderPauseUi();
+      el.holdLabel.style.fontSize = '';
+    },
+    onComplete: async () => {
+      el.hold.classList.remove('holding');
+      el.holdLabel.textContent = 'Unlocking…';
+      const res = await send({ type: 'startPause', minutes: selectedMinutes });
+      if (res && res.ok) {
+        toast(`Paused for ${selectedMinutes} min. The shield is off.`);
+        setTimeout(() => goTo(`https://${site}`), 600);
+      } else {
+        toast('Pause refused — the limit is the point.');
+        hold.reset();
+        refresh();
+      }
+    },
   });
-  for (const evt of ['pointerup', 'pointerleave', 'pointercancel']) el.hold.addEventListener(evt, cancelHold);
-  el.hold.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  hold.attach();
+
 
   el.back.addEventListener('click', () => {
     if (history.length > 1) history.back();

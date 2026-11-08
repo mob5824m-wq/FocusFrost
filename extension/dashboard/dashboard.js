@@ -83,6 +83,7 @@
 
     renderBars();
     renderTable();
+    renderClearAll();
   }
 
   function renderBars() {
@@ -199,6 +200,37 @@
       });
     });
 
+    /* Starting a pause in the sandbox costs the same six seconds as the real
+       thing — otherwise the sandbox teaches a gesture the product rejects. */
+    const sandboxPause = FFHold.create({
+      el: $('simPause'),
+      fill: $('simPauseFill'),
+      durationMs: () => (res.pause && res.pause.holdMs) || 6000,
+      canStart: () => sim.snapshot().pause.canStart,
+      onTick: ({ secondsLeft }) => {
+        $('simPauseLabel').textContent = `${secondsLeft}s — keep holding`;
+      },
+      onCancel: () => renderSandboxPause(),
+      onComplete: () => {
+        const minutes = Number(minutesSelect.value);
+        $('simPauseLabel').textContent = `Paused ${minutes} min`;
+        sim.pause(minutes);
+        setTimeout(renderSandboxPause, 900);
+      },
+    });
+    sandboxPause.attach();
+
+    function renderSandboxPause() {
+      const pause = sim.snapshot().pause;
+      const seconds = Math.round(res.pause.holdMs / 1000);
+      $('simPauseLabel').textContent = pause.active
+        ? 'Pause running'
+        : `Hold ${seconds}s for ${Number(minutesSelect.value)} min`;
+      $('simPause').disabled = !pause.canStart;
+    }
+    minutesSelect.addEventListener('change', renderSandboxPause);
+    renderSandboxPause();
+
     document.querySelectorAll('[data-sim]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const action = btn.dataset.sim;
@@ -207,13 +239,17 @@
         else if (action === 'blur') sim.blur(pattern);
         else if (action === 'return') sim.open(pattern);
         else if (action === 'close') sim.close(pattern);
-        else if (action === 'pause') sim.pause(Number(minutesSelect.value));
+        // 'pause' is handled by the hold controller below, not by a click.
         else if (action === 'reset') sim.reset();
         else if (action.startsWith('+')) sim.tick(Number(action.slice(1)));
       });
     });
 
     sim.subscribe((snap) => {
+      // Keep the sandbox pause button honest as the clock moves — but never
+      // repaint its label out from under a finger that is mid-hold.
+      if (!sandboxPause.holding()) renderSandboxPause();
+
       const host = snap.sites;
       const active = host.filter((s) => s.session);
       const cooling = host.filter((s) => s.cooldownUntil);
@@ -262,16 +298,74 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* destructive action: hold to confirm                                */
+  /* ------------------------------------------------------------------ */
+
+  const FFHold = window.FFHold;
+
+  /**
+   * "Clear all locks" wipes every cooldown, ends any running visit and stops a
+   * pause. It used to be one click behind a throwaway `confirm()` — a browser
+   * prompt you can dismiss with the keyboard in a tenth of a second, and one
+   * the sandbox cannot even show. It now costs the same gesture as the pause
+   * button, and it never fires without it.
+   */
+  const clearAll = FFHold.create({
+    el: $('clearAll'),
+    fill: $('clearAllFill'),
+    durationMs: () => (status && status.pause ? status.pause.holdMs : 6000),
+    onStart: () => {
+      $('clearAllLabel').textContent = 'Keep holding…';
+      $('clearAllState').classList.remove('show');
+    },
+    onTick: ({ secondsLeft }) => {
+      $('clearAllLabel').textContent = `${secondsLeft}s — keep holding`;
+    },
+    onCancel: () => {
+      renderClearAll();
+    },
+    onComplete: async () => {
+      $('clearAllLabel').textContent = 'Clearing…';
+      await send({ type: 'clearCooldowns' });
+      const state = $('clearAllState');
+      state.textContent = 'all locks cleared';
+      state.classList.add('show');
+      await load();
+      setTimeout(() => {
+        state.classList.remove('show');
+        renderClearAll();
+      }, 2600);
+    },
+  });
+  clearAll.attach();
+
+  /** Keep the label honest: how long the hold is, and whether it can run. */
+  function renderClearAll() {
+    if (!status) return;
+    const seconds = Math.round(clearAll.duration() / 1000);
+    $('clearAllLabel').textContent = `Hold ${seconds}s to clear all locks`;
+    $('clearAll').disabled = !status.sites.some(
+      (site) => site.session || site.cooldownUntil
+    ) && !status.pause.active;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* wiring                                                             */
   /* ------------------------------------------------------------------ */
 
   $('settingsBtn').addEventListener('click', () => send({ type: 'openOptions' }));
-  $('clearAll').addEventListener('click', async () => {
-    if (!confirm('Clear every cooldown and end the current pause?')) return;
-    await send({ type: 'clearCooldowns' });
-    toast('All locks cleared');
-    await load();
-  });
+
+  /**
+   * Read the version from the manifest rather than typing it into the footer.
+   * The footer still said "v1.1" three releases later, which is the sort of
+   * detail that makes a working product look abandoned.
+   */
+  try {
+    const version = chrome.runtime.getManifest().version;
+    $('appVersion').textContent = `FocusFrost v${version}`;
+  } catch (_) {
+    $('appVersion').textContent = 'FocusFrost';
+  }
 
   setInterval(async () => {
     const res = await send({ type: 'status' });

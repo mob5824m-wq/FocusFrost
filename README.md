@@ -87,6 +87,8 @@ When you genuinely need the site — a tutorial, a link from a colleague, an act
 2. **Press and hold** the button for a configurable duration (`6 s` by default). Release early and nothing happens.
 3. The pause unlocks every tracked site for exactly that long, then re-arms itself automatically.
 
+The same gesture guards every destructive action: clearing all locks on the dashboard is a hold too, not a click. It lives in one place (`shared/hold.js`), so the popup, the cooling-down page and the dashboard cannot drift apart.
+
 Pausing is rationed, because otherwise it is just a button that turns the product off:
 
 | Limit | Default | Where |
@@ -128,7 +130,7 @@ Inside the sandbox you get a fake browser with tabs you can open, leave, return 
 | **On-page chip** | A small frosty pill bottom-right with the current clock. Click – to collapse it to a dot; it stays collapsed (remembered per site, across reloads) until you click it. |
 | **Blocked page** | The cooling-down wall: live countdown, the breathing exercise, and the hold-to-pause panel. |
 | **Settings (full page)** | The dedicated settings web app — see below. |
-| **Dashboard** | Today's metrics, per-site focus time, live engine state, and a rules sandbox. |
+| **Dashboard** | Today's metrics, per-site focus time, live engine state, hold-to-confirm "clear all locks", and a rules sandbox. |
 
 ### The settings page
 
@@ -175,6 +177,7 @@ extension/
     util.js              durations, day keys, domain normalisation
     config.js            settings schema, defaults, clamping
     engine.js            ← the whole policy, pure and testable
+    hold.js              press-and-hold gesture, shared by every page
   intervention/          the full-page gate: breathe, reflect, type, intend
   popup/                 live state + hold-to-pause
   options/               the dedicated settings app (app-core/sections/app + CSS)
@@ -191,12 +194,13 @@ State lives in `chrome.storage.local`; settings are mirrored to `chrome.storage.
 ### Tests
 
 ```bash
-node --test tests/*.test.js      # 66 tests, no dependencies
+node --test tests/*.test.js      # 122 tests, no dependencies
 ```
 
 - `tests/engine.test.js` — the policy in isolation: grace edge cases, cap enforcement, cooldown arithmetic, pause rationing, clamping, corrupt-state repair.
 - `tests/intervention.test.js` — the gate: intervention vs. cooldown precedence, intentions and walk-aways, the log cap, the doomscroll brake, focus hours (including overnight windows, day lists and pauses), config clamping.
 - `tests/worker.test.js` — the **real** `background.js` booted in a VM against a fake `chrome` API: navigations, second tabs, tab closes, window focus loss, content-script ports, settings round-trips, and the gate end to end (one pass per tab, no redirect loop, walk-aways, focus hours).
+- `tests/hold.test.js` — the press-and-hold gesture: full duration required, every release path aborts, a click never completes, and each page actually uses the shared controller.
 - `tests/release.test.js` — the version staying in sync across files, Chrome-rejected version formats, and the packaged zip (valid archive, manifest at the root, reproducible bytes, refuses to build a broken tree).
 
 ### Permissions, and why

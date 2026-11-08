@@ -17,6 +17,9 @@
   window.__FF_DEMO = true;
 
   const EXT_ID = 'focusfrost-demo';
+  // Served by demo/server.js from the real manifest, so version labels in the
+  // sandbox match the shipped build instead of a hardcoded "1.0.0".
+  const VERSION = window.__FF_MANIFEST_VERSION__ || '0.0.0';
   const LOG_LIMIT = 200;
 
   /* ------------------------------------------------------------------ */
@@ -253,7 +256,7 @@
         id: EXT_ID,
         lastError: null,
         getURL: (path) => `chrome-extension://${EXT_ID}/${String(path).replace(/^\//, '')}`,
-        getManifest: () => ({ version: '1.0.0', name: 'FocusFrost' }),
+        getManifest: () => ({ version: VERSION, name: 'FocusFrost' }),
         openOptionsPage: () => {
           pushLog('openOptionsPage() → /options/options.html');
           evt('demo:open-page')._fire('options/options.html');
@@ -499,7 +502,7 @@
         id: EXT_ID,
         lastError: null,
         getURL: (p) => `chrome-extension://${EXT_ID}/${String(p).replace(/^\//, '')}`,
-        getManifest: () => ({ version: '1.0.0' }),
+        getManifest: () => ({ version: VERSION }),
         openOptionsPage: () => bridge.openOptions(),
         sendMessage: (message) => bridge.sendMessage(message),
         onMessage: { addListener() {} },

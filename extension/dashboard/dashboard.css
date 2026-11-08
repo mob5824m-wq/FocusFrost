@@ -148,3 +148,61 @@
 .sim-gate-actions { display: flex; gap: 8px; margin-top: 10px; }
 .sim-gate-actions .btn:first-child { order: 2; }
 .sim-gate-actions .btn:last-child { order: 1; }
+
+/* ---------- destructive action: hold to confirm ---------- */
+.clear-wrap { display: flex; align-items: center; gap: 10px; }
+
+.hold {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(127, 211, 255, 0.32);
+  background: linear-gradient(180deg, rgba(127, 211, 255, 0.14), rgba(74, 157, 245, 0.1));
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hold:hover { border-color: rgba(127, 211, 255, 0.55); }
+.hold:focus-visible { outline: 2px solid rgba(127, 211, 255, 0.6); outline-offset: 2px; }
+.hold.holding { border-color: rgba(127, 211, 255, 0.85); }
+.hold.holding .hold-label { opacity: 0.92; }
+.hold:disabled { opacity: 0.42; cursor: not-allowed; }
+
+.hold-sm { height: 34px; padding: 0 14px; font-size: 12px; min-width: 190px; }
+
+.hold-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(74, 157, 245, 0.75), rgba(127, 211, 255, 0.9));
+  transition: width 0.06s linear, background 0.2s;
+  pointer-events: none;
+}
+.hold-fill.done { background: linear-gradient(90deg, var(--mint), #7ff0c8); }
+.hold-label {
+  position: relative;
+  pointer-events: none;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+.clear-state {
+  font-size: 11px;
+  color: var(--mint);
+  min-width: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.clear-state.show { opacity: 1; }
+
+@media (max-width: 900px) {
+  .clear-wrap { flex-basis: 100%; margin-top: 10px; }
+  .hold-sm { min-width: 0; flex: 1 1 auto; }
+}

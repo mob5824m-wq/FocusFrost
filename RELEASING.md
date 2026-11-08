@@ -32,7 +32,7 @@ workflow compares against existing tags and exits quietly.
 
 ```bash
 npm run version:minor        # or version:patch / version:major
-npm test                     # 66 tests
+npm test                     # 123 tests
 npm run zip                  # → dist/focusfrost-<version>.zip
 git commit -am "v$(npm run --silent version)"
 ```

@@ -1,6 +1,6 @@
 {
   "name": "focusfrost",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "description": "A cooldown for distracting sites, plus a one-breath pause on the way in.",
   "license": "MIT",

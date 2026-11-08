@@ -55,8 +55,20 @@ function safeJoin(file) {
   return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension', 'manifest.json'), 'utf8'));
+
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url);
+  if (parsed.pathname === '/demo/version.js') {
+    // The sandbox fakes chrome.runtime for the real pages; the manifest version
+    // is the one thing it can just tell the truth about.
+    res.writeHead(200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    return res.end('window.__FF_MANIFEST_VERSION__ = ' + JSON.stringify(MANIFEST.version) + ';\n');
+  }
+
   const file = resolvePath(parsed.pathname);
 
   if (!safeJoin(file)) {
@@ -82,7 +94,7 @@ const server = http.createServer((req, res) => {
       // A single external script: extension pages declare `script-src 'self'`,
       // so an inline <script> stub here would be refused by the page's own CSP.
       // preview.js sets window.__FF_DEMO itself.
-      const tag = '<script src="/demo/preview.js"></script>';
+      const tag = '<script src="/demo/version.js"></script><script src="/demo/preview.js"></script>';
       // It must run *before* the page's own scripts, which expect chrome.* to
       // already exist. Dropping it at the top of <head> guarantees that.
       const injected = /<head[^>]*>/i.test(html)

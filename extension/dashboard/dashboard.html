@@ -76,7 +76,13 @@
           <h2 class="h2">Live site state</h2>
           <p class="small muted">What the engine thinks about every tracked domain right now.</p>
         </div>
-        <button id="clearAll" class="btn btn-sm btn-ghost">Clear all locks</button>
+        <div class="clear-wrap">
+          <button id="clearAll" class="hold hold-sm" type="button">
+            <span class="hold-fill" id="clearAllFill"></span>
+            <span class="hold-label" id="clearAllLabel">Hold 6s to clear all locks</span>
+          </button>
+          <span id="clearAllState" class="clear-state" role="status" aria-live="polite"></span>
+        </div>
       </div>
       <div class="table" id="table"></div>
     </section>
@@ -117,7 +123,11 @@
           <div class="field">
             <label for="simMinutes">Pause length</label>
             <select id="simMinutes"></select>
-            <button class="btn btn-sm btn-primary" data-sim="pause">Start pause</button>
+            <button id="simPause" class="hold hold-sm" type="button">
+              <span class="hold-fill" id="simPauseFill"></span>
+              <span class="hold-label" id="simPauseLabel">Hold to pause</span>
+            </button>
+            <p class="tiny dim">Same gesture as the real thing — six seconds of commitment, then the sandbox runs it.</p>
           </div>
         </div>
 
@@ -146,7 +156,7 @@
     </section>
 
     <footer class="dfoot tiny dim">
-      FocusFrost v1.1 — local-only. No accounts, no telemetry, no network requests except site favicons.
+      <span id="appVersion">FocusFrost</span> — local-only. No accounts, no telemetry, no network requests except site favicons.
     </footer>
   </div>
 
@@ -154,6 +164,7 @@
 
   <script src="../shared/util.js"></script>
   <script src="../shared/config.js"></script>
+  <script src="../shared/hold.js"></script>
   <script src="../shared/engine.js"></script>
   <script src="simulator.js"></script>
   <script src="dashboard.js"></script>
